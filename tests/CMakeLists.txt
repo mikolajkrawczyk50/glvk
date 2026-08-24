@@ -1,0 +1,7 @@
+add_executable(test_vector_add test_vector_add.cpp)
+target_link_libraries(test_vector_add PRIVATE glvk_static)
+add_test(NAME test_vector_add COMMAND test_vector_add)
+
+add_executable(test_spec_constant test_spec_constant.cpp)
+target_link_libraries(test_spec_constant PRIVATE glvk_static)
+add_test(NAME test_spec_constant COMMAND test_spec_constant)
