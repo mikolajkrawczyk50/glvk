@@ -1,5 +1,3 @@
 build/
-*.o
-*.a
-*.so
-.DS_Store
+bin/
+rife-ncnn-vulkan-*/

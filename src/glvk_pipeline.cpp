@@ -37,6 +37,8 @@ VkResult vkCreateComputePipelines(VkDevice device,
                                    VkPipeline* pPipelines) {
     if (!device || !pCreateInfos || !pPipelines) return VK_ERROR_INITIALIZATION_FAILED;
 
+    GLVKContextScope scope;
+
     for (uint32_t i = 0; i < createInfoCount; i++) {
         const auto& info = pCreateInfos[i];
         if (!info.stage.module) {
@@ -69,6 +71,8 @@ void vkDestroyPipeline(VkDevice device,
                        VkPipeline pipeline,
                        const VkAllocationCallbacks* pAllocator) {
     if (!pipeline) return;
+
+    GLVKContextScope scope;
     if (pipeline->gl_program) {
         gl.DeleteProgram(pipeline->gl_program);
         pipeline->gl_program = 0;

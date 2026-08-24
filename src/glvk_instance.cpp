@@ -217,7 +217,7 @@ void vkGetPhysicalDeviceQueueFamilyProperties(VkPhysicalDevice physicalDevice,
 
     if (*pQueueFamilyPropertyCount >= 1) {
         memset(&pQueueFamilyProperties[0], 0, sizeof(VkQueueFamilyProperties));
-        pQueueFamilyProperties[0].queueFlags = VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
+        pQueueFamilyProperties[0].queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
         pQueueFamilyProperties[0].queueCount = 1;
         pQueueFamilyProperties[0].timestampValidBits = 64;
         pQueueFamilyProperties[0].minImageTransferGranularity = { 1, 1, 1 };

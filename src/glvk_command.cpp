@@ -203,7 +203,7 @@ void vkCmdFillBuffer(VkCommandBuffer commandBuffer,
                      VkBuffer dstBuffer,
                      VkDeviceSize dstOffset,
                      VkDeviceSize size,
-                     uint32_t data) {
+                       uint32_t data) {
     if (!commandBuffer || !dstBuffer) return;
 
     GLVKCmd cmd;
@@ -222,6 +222,7 @@ void vkCmdUpdateBuffer(VkCommandBuffer commandBuffer,
                        const void* pData) {
     if (!commandBuffer || !dstBuffer || !pData || dataSize == 0) return;
 
+    GLVKContextScope scope;
     if (dstBuffer->memory) {
         gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, dstBuffer->memory->gl_buffer);
         gl.BufferSubData(GL_SHADER_STORAGE_BUFFER, (GLintptr)(dstBuffer->memory_offset + dstOffset), (GLsizeiptr)dataSize, pData);
@@ -304,6 +305,18 @@ void vkCmdEndQuery(VkCommandBuffer commandBuffer,
                    uint32_t query) {
 }
 
+void vkCmdResetQueryPool(VkCommandBuffer commandBuffer,
+                         VkQueryPool queryPool,
+                         uint32_t firstQuery,
+                         uint32_t queryCount) {
+}
+
+void vkCmdWriteTimestamp(VkCommandBuffer commandBuffer,
+                         VkPipelineStageFlagBits pipelineStage,
+                         VkQueryPool queryPool,
+                         uint32_t query) {
+}
+
 void vkCmdCopyQueryPoolResults(VkCommandBuffer commandBuffer,
                                VkQueryPool queryPool,
                                uint32_t firstQuery,
@@ -347,6 +360,8 @@ VkResult vkQueueSubmit(VkQueue queue,
                        uint32_t submitCount,
                        const VkSubmitInfo* pSubmits,
                        VkFence fence) {
+    GLVKContextScope scope;
+
     VkPipeline current_pipeline = VK_NULL_HANDLE;
     uint8_t current_push_constants[128] = {0};
 
@@ -491,6 +506,7 @@ VkResult vkQueueSubmit(VkQueue queue,
 }
 
 VkResult vkQueueWaitIdle(VkQueue queue) {
+    GLVKContextScope scope;
     if (gl.MemoryBarrier) {
         gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
     }

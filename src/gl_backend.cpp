@@ -83,6 +83,7 @@ bool GLBackend::Initialize() {
     }
 
     QueryCapabilities();
+    DoneCurrent();
     initialized_ = true;
     return true;
 }

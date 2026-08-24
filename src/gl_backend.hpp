@@ -3,6 +3,7 @@
 #include "gl_loader.hpp"
 #include <string>
 #include <vector>
+#include <mutex>
 
 struct GLGPUInfo {
     std::string device_name;
@@ -32,6 +33,8 @@ public:
     const GLGPUInfo& GetGPUInfo() const { return gpu_info_; }
     bool IsInitialized() const { return initialized_; }
 
+    std::mutex& GetMutex() { return mutex_; }
+
 private:
     GLBackend() = default;
     ~GLBackend() { Shutdown(); }
@@ -43,4 +46,21 @@ private:
     EGLContext egl_context_ = EGL_NO_CONTEXT;
     bool initialized_ = false;
     GLGPUInfo gpu_info_;
+    std::mutex mutex_;
+};
+
+class GLVKContextScope {
+public:
+    GLVKContextScope() {
+        GLBackend::Instance().GetMutex().lock();
+        GLBackend::Instance().MakeCurrent();
+    }
+
+    ~GLVKContextScope() {
+        GLBackend::Instance().DoneCurrent();
+        GLBackend::Instance().GetMutex().unlock();
+    }
+
+    GLVKContextScope(const GLVKContextScope&) = delete;
+    GLVKContextScope& operator=(const GLVKContextScope&) = delete;
 };

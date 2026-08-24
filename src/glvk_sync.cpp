@@ -10,11 +10,11 @@ VkResult vkCreateFence(VkDevice device,
                        VkFence* pFence) {
     if (!device || !pCreateInfo || !pFence) return VK_ERROR_INITIALIZATION_FAILED;
 
-    auto fence = new VkFence_T();
-    fence->signaled = (pCreateInfo->flags & VK_FENCE_CREATE_SIGNALED_BIT) != 0;
-    fence->sync = nullptr;
+    auto f = new VkFence_T();
+    f->signaled = (pCreateInfo->flags & VK_FENCE_CREATE_SIGNALED_BIT) != 0;
+    f->sync = nullptr;
 
-    *pFence = fence;
+    *pFence = f;
     return VK_SUCCESS;
 }
 
@@ -23,6 +23,7 @@ void vkDestroyFence(VkDevice device,
                     const VkAllocationCallbacks* pAllocator) {
     if (!fence) return;
     if (fence->sync) {
+        GLVKContextScope scope;
         gl.DeleteSync(fence->sync);
         fence->sync = nullptr;
     }
@@ -32,13 +33,17 @@ void vkDestroyFence(VkDevice device,
 VkResult vkResetFences(VkDevice device,
                        uint32_t fenceCount,
                        const VkFence* pFences) {
+    if (!pFences) return VK_ERROR_INITIALIZATION_FAILED;
+
+    GLVKContextScope scope;
     for (uint32_t i = 0; i < fenceCount; i++) {
-        if (pFences[i]) {
-            if (pFences[i]->sync) {
-                gl.DeleteSync(pFences[i]->sync);
-                pFences[i]->sync = nullptr;
+        auto f = pFences[i];
+        if (f) {
+            if (f->sync) {
+                gl.DeleteSync(f->sync);
+                f->sync = nullptr;
             }
-            pFences[i]->signaled = false;
+            f->signaled = false;
         }
     }
     return VK_SUCCESS;
@@ -47,13 +52,13 @@ VkResult vkResetFences(VkDevice device,
 VkResult vkGetFenceStatus(VkDevice device, VkFence fence) {
     if (!fence) return VK_ERROR_INITIALIZATION_FAILED;
     if (fence->signaled) return VK_SUCCESS;
+    if (!fence->sync) return VK_NOT_READY;
 
-    if (fence->sync) {
-        GLenum res = gl.ClientWaitSync(fence->sync, 0, 0);
-        if (res == GL_ALREADY_SIGNALED || res == GL_CONDITION_SATISFIED) {
-            fence->signaled = true;
-            return VK_SUCCESS;
-        }
+    GLVKContextScope scope;
+    GLenum res = gl.ClientWaitSync(fence->sync, 0, 0);
+    if (res == GL_ALREADY_SIGNALED || res == GL_CONDITION_SATISFIED) {
+        fence->signaled = true;
+        return VK_SUCCESS;
     }
     return VK_NOT_READY;
 }
@@ -63,27 +68,30 @@ VkResult vkWaitForFences(VkDevice device,
                          const VkFence* pFences,
                          VkBool32 waitAll,
                          uint64_t timeout) {
+    if (!pFences || fenceCount == 0) return VK_SUCCESS;
+
+    GLVKContextScope scope;
+
     for (uint32_t i = 0; i < fenceCount; i++) {
-        auto fence = pFences[i];
-        if (!fence) continue;
+        auto f = pFences[i];
+        if (!f) continue;
+        if (f->signaled) continue;
 
-        if (fence->signaled) continue;
-
-        if (fence->sync) {
-            GLbitfield flags = GL_SYNC_FLUSH_COMMANDS_BIT;
-            GLuint64 gl_timeout = (timeout == UINT64_MAX) ? GL_TIMEOUT_IGNORED : (GLuint64)timeout;
-            GLenum res = gl.ClientWaitSync(fence->sync, flags, gl_timeout);
+        if (f->sync) {
+            GLuint64 gl_timeout = (timeout == UINT64_MAX) ? GL_TIMEOUT_IGNORED : timeout;
+            GLenum res = gl.ClientWaitSync(f->sync, GL_SYNC_FLUSH_COMMANDS_BIT, gl_timeout);
             if (res == GL_ALREADY_SIGNALED || res == GL_CONDITION_SATISFIED) {
-                fence->signaled = true;
+                f->signaled = true;
             } else if (res == GL_TIMEOUT_EXPIRED) {
                 return VK_TIMEOUT;
             } else {
                 return VK_ERROR_DEVICE_LOST;
             }
         } else {
-            fence->signaled = true;
+            f->signaled = true;
         }
     }
+
     return VK_SUCCESS;
 }
 
@@ -91,7 +99,7 @@ VkResult vkCreateSemaphore(VkDevice device,
                            const VkSemaphoreCreateInfo* pCreateInfo,
                            const VkAllocationCallbacks* pAllocator,
                            VkSemaphore* pSemaphore) {
-    if (!pSemaphore) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!device || !pSemaphore) return VK_ERROR_INITIALIZATION_FAILED;
     *pSemaphore = new VkSemaphore_T();
     return VK_SUCCESS;
 }
@@ -107,7 +115,7 @@ VkResult vkCreateQueryPool(VkDevice device,
                            const VkQueryPoolCreateInfo* pCreateInfo,
                            const VkAllocationCallbacks* pAllocator,
                            VkQueryPool* pQueryPool) {
-    if (!pQueryPool) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!device || !pCreateInfo || !pQueryPool) return VK_ERROR_INITIALIZATION_FAILED;
     auto qp = new VkQueryPool_T();
     qp->count = pCreateInfo->queryCount;
     *pQueryPool = qp;
@@ -121,18 +129,6 @@ void vkDestroyQueryPool(VkDevice device,
     delete queryPool;
 }
 
-void vkCmdResetQueryPool(VkCommandBuffer commandBuffer,
-                         VkQueryPool queryPool,
-                         uint32_t firstQuery,
-                         uint32_t queryCount) {
-}
-
-void vkCmdWriteTimestamp(VkCommandBuffer commandBuffer,
-                         VkPipelineStageFlagBits pipelineStage,
-                         VkQueryPool queryPool,
-                         uint32_t query) {
-}
-
 VkResult vkGetQueryPoolResults(VkDevice device,
                                VkQueryPool queryPool,
                                uint32_t firstQuery,
@@ -141,7 +137,7 @@ VkResult vkGetQueryPoolResults(VkDevice device,
                                void* pData,
                                VkDeviceSize stride,
                                VkQueryResultFlags flags) {
-    if (pData && dataSize > 0) {
+    if (pData && dataSize >= sizeof(uint64_t) * queryCount) {
         memset(pData, 0, dataSize);
     }
     return VK_SUCCESS;

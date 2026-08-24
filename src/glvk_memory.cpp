@@ -10,6 +10,8 @@ VkResult vkAllocateMemory(VkDevice device,
                           VkDeviceMemory* pMemory) {
     if (!device || !pAllocateInfo || !pMemory) return VK_ERROR_INITIALIZATION_FAILED;
 
+    GLVKContextScope scope;
+
     auto mem = new VkDeviceMemory_T();
     mem->size = pAllocateInfo->allocationSize;
     mem->memory_type_index = pAllocateInfo->memoryTypeIndex;
@@ -34,6 +36,9 @@ void vkFreeMemory(VkDevice device,
                   VkDeviceMemory memory,
                   const VkAllocationCallbacks* pAllocator) {
     if (!memory) return;
+
+    GLVKContextScope scope;
+
     if (memory->mapped_ptr) {
         gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffer);
         gl.UnmapBuffer(GL_SHADER_STORAGE_BUFFER);
@@ -61,6 +66,8 @@ VkResult vkMapMemory(VkDevice device,
         *ppData = (uint8_t*)memory->mapped_ptr + offset;
         return VK_SUCCESS;
     }
+
+    GLVKContextScope scope;
 
     gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffer);
 
@@ -90,6 +97,8 @@ VkResult vkMapMemory(VkDevice device,
 void vkUnmapMemory(VkDevice device, VkDeviceMemory memory) {
     if (!memory || !memory->mapped_ptr) return;
 
+    GLVKContextScope scope;
+
     gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffer);
     gl.UnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -102,6 +111,7 @@ void vkUnmapMemory(VkDevice device, VkDeviceMemory memory) {
 VkResult vkFlushMappedMemoryRanges(VkDevice device,
                                    uint32_t memoryRangeCount,
                                    const VkMappedMemoryRange* pMemoryRanges) {
+    GLVKContextScope scope;
     if (gl.MemoryBarrier) {
         gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
     }
@@ -111,6 +121,7 @@ VkResult vkFlushMappedMemoryRanges(VkDevice device,
 VkResult vkInvalidateMappedMemoryRanges(VkDevice device,
                                        uint32_t memoryRangeCount,
                                        const VkMappedMemoryRange* pMemoryRanges) {
+    GLVKContextScope scope;
     if (gl.MemoryBarrier) {
         gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
     }

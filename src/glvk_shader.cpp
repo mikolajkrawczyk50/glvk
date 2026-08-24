@@ -3,6 +3,56 @@
 #include <spirv_glsl.hpp>
 #include <iostream>
 #include <vector>
+#include <string>
+
+static void PatchGLSLSource(std::string& src) {
+    auto replace_all = [](std::string& s, const std::string& from, const std::string& to) {
+        size_t pos = 0;
+        while ((pos = s.find(from, pos)) != std::string::npos) {
+            s.replace(pos, from.length(), to);
+            pos += to.length();
+        }
+    };
+
+    replace_all(src, "#error No extension available for FP16.", "// FP16 mapped to float");
+    replace_all(src, "#error No extension available for Int8.", "// Int8 mapped to uint");
+    replace_all(src, "#error No extension available for Int16.", "// Int16 mapped to int");
+
+    std::string type_defs = 
+        "\n// GLVK FP16 / Int8 emulation macros\n"
+        "#ifndef GL_AMD_gpu_shader_half_float\n"
+        "#define float16_t float\n"
+        "#define f16vec2 vec2\n"
+        "#define f16vec3 vec3\n"
+        "#define f16vec4 vec4\n"
+        "#endif\n"
+        "#ifndef GL_EXT_shader_explicit_arithmetic_types_int8\n"
+        "#define uint8_t uint\n"
+        "#define u8vec2 uvec2\n"
+        "#define u8vec3 uvec3\n"
+        "#define u8vec4 uvec4\n"
+        "#define int8_t int\n"
+        "#define i8vec2 ivec2\n"
+        "#define i8vec3 ivec3\n"
+        "#define i8vec4 ivec4\n"
+        "#endif\n"
+        "#define uint16_t uint\n"
+        "#define u16vec2 uvec2\n"
+        "#define u16vec3 uvec3\n"
+        "#define u16vec4 uvec4\n"
+        "#define int16_t int\n"
+        "#define i16vec2 ivec2\n"
+        "#define i16vec3 ivec3\n"
+        "#define i16vec4 ivec4\n";
+
+    size_t version_pos = src.find("#version 430");
+    if (version_pos != std::string::npos) {
+        size_t line_end = src.find('\n', version_pos);
+        if (line_end != std::string::npos) {
+            src.insert(line_end + 1, type_defs);
+        }
+    }
+}
 
 GLuint CompileSPIRVToGLProgram(
     const std::vector<uint32_t>& spirv_words,
@@ -42,6 +92,7 @@ GLuint CompileSPIRVToGLProgram(
         glsl.set_common_options(options);
 
         std::string glsl_source = glsl.compile();
+        PatchGLSLSource(glsl_source);
 
         GLuint shader = gl.CreateShader(GL_COMPUTE_SHADER);
         const char* src_cstr = glsl_source.c_str();
