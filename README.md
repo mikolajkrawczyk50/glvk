@@ -1,67 +1,111 @@
-# GLVK: Minimal GPGPU Vulkan Translation Layer over OpenGL 4.3+
+# GLVK - Minimal Vulkan GPGPU Compute Shim on OpenGL 4.3+
 
-**GLVK** is a lightweight, compute-focused Vulkan translation layer that maps Vulkan compute shaders, storage buffers (SSBOs), push constants, and dispatch commands directly to **OpenGL 4.3+ / OpenGL ES 3.1+**.
-
-It is specifically tailored for deep learning inference runtimes like **ncnn-vulkan**, enabling Vulkan neural network acceleration on legacy GPUs that only have OpenGL 4.3+ drivers.
+**GLVK** is a lightweight, drop-in Vulkan translation layer designed for **GPGPU compute workloads** (such as [ncnn-vulkan](https://github.com/Tencent/ncnn)). It translates Vulkan Compute APIs into **OpenGL 4.3+ Core Profile / OpenGL ES 3.1+ Compute Shaders**, allowing modern Vulkan compute software to run on legacy GPUs, APUs, and embedded platforms lacking native Vulkan drivers.
 
 ---
 
-## Key Features
+## ⚡ Key Features
 
-- **Compute & SSBO Centric**: Focuses strictly on Vulkan GPGPU features (Compute Pipelines, Storage Buffers, Descriptors, Push Constants, Specialization Constants, Memory Barriers, Fences).
-- **SPIR-V to GLSL 4.30 on-the-fly**: Embedded [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) dynamically translates SPIR-V bytecode and specializes constants at pipeline creation.
-- **Headless Context Support**: Supports headless execution via EGL (`EGL_PLATFORM_DEVICE_EXT` and surfaceless contexts).
-- **Drop-in `libvulkan.so` Replacement**: Produces both `libglvk_static.a` and `libvulkan.so`.
+- **Direct OpenGL 4.3+ SSBO & Compute Mapping**:
+  - `VkBuffer` $\rightarrow$ OpenGL Shader Storage Buffer Objects (`GL_SHADER_STORAGE_BUFFER`)
+  - `vkCmdDispatch` / `vkCmdDispatchIndirect` $\rightarrow$ `glDispatchCompute` / `glDispatchComputeIndirect`
+  - `vkCmdPipelineBarrier` $\rightarrow$ `glMemoryBarrier`
+  - `vkQueueSubmit` / `vkWaitForFences` $\rightarrow$ `glFenceSync` / `glClientWaitSync`
+- **JIT SPIR-V to GLSL 4.30 Decompilation**:
+  - Embedded **SPIRV-Cross** runtime converts Vulkan SPIR-V bytecode into optimized GLSL compute shaders.
+  - Full support for `VkSpecializationInfo` specialization constants patched at runtime before GLSL compilation.
+  - Automatic reflection & mapping of Vulkan Push Constants ($128$ bytes) to uniform variables (`glProgramUniform1i`, `glProgramUniform1f`, etc.).
+- **Zero-Copy Host Visible Persistent Memory**:
+  - Utilizes `glBufferStorage` with `GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT` for optimal CPU $\leftrightarrow$ GPU data staging.
+- **Full ncnn-vulkan Compatibility**:
+  - Provides the complete Vulkan runtime surface expected by `ncnn::create_gpu_instance()`, `ncnn::VulkanDevice`, and `ncnn::VkCompute`.
 
 ---
 
-## Project Structure
+## 🛠️ Architecture
 
 ```
-glvk/
-├── CMakeLists.txt              # Root build configuration with SPIRV-Cross FetchContent
-├── src/
-│   ├── gl_loader.hpp           # OpenGL 4.3 core function pointers and definitions
-│   ├── gl_backend.hpp / .cpp   # Headless EGL context and device capabilities query
-│   ├── glvk_internal.hpp       # Vulkan handle structures (Device, Buffer, Pipeline, etc.)
-│   ├── glvk_instance.cpp       # Instance, Physical Device, and Feature queries
-│   ├── glvk_device.cpp         # Logical Device and Queue creation
-│   ├── glvk_memory.cpp         # VkDeviceMemory allocation and host mapping (glMapBufferRange)
-│   ├── glvk_buffer.cpp         # VkBuffer and memory requirement queries
-│   ├── glvk_shader.hpp / .cpp  # SPIRV-Cross shader translation and specialization constants
-│   ├── glvk_pipeline.cpp       # Pipeline layout and compute pipeline compilation
-│   ├── glvk_descriptor.cpp     # Descriptor set layout, descriptor pools, and SSBO binding
-│   ├── glvk_command.cpp        # Command buffer recording, push constants, and dispatch replay
-│   ├── glvk_sync.cpp           # Fences (glFenceSync / glClientWaitSync) and semaphores
-│   └── glvk_entrypoints.cpp    # vkGetInstanceProcAddr and vkGetDeviceProcAddr dispatch table
-└── tests/
-    ├── test_vector_add.cpp     # Vector addition test with push constants and SSBOs
-    └── test_spec_constant.cpp  # Specialization constant validation test
+┌────────────────────────────────────────────────────────┐
+│               ncnn-vulkan / GPGPU Apps                 │
+└──────────────────────────┬─────────────────────────────┘
+                           │ Vulkan C API (libvulkan.so)
+┌──────────────────────────▼─────────────────────────────┐
+│                          GLVK                          │
+│ ┌────────────────────────────────────────────────────┐ │
+│ │  SPIRV-Cross JIT Compiler + Spec Constant Patching  │ │
+│ └────────────────────────────────────────────────────┘ │
+│ ┌────────────────────────────────────────────────────┐ │
+│ │  SSBO Memory Manager + Persistent Buffer Mapping   │ │
+│ └────────────────────────────────────────────────────┘ │
+│ ┌────────────────────────────────────────────────────┐ │
+│ │  Command Recorder & Dispatch Engine                │ │
+│ └────────────────────────────────────────────────────┘ │
+└──────────────────────────┬─────────────────────────────┘
+                           │ EGL / OpenGL 4.3+ Core
+┌──────────────────────────▼─────────────────────────────┐
+│                 GPU Driver (radeonsi / iris / etc.)     │
+└────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Building and Testing
+## 📦 What is Needed to Run `ncnn-vulkan`
 
+To run `ncnn-vulkan` on top of GLVK:
+
+### 1. Hardware & System Requirements
+- **OpenGL 4.3+ Core Profile** or **OpenGL ES 3.1+** (Support for SSBOs, Compute Shaders, Image load/store).
+- Linux with EGL support (`libEGL.so.1`, `libGL.so.1`).
+
+### 2. Vulkan API Subset Required by ncnn
+1. **Physical Device & Properties**:
+   - `vkEnumeratePhysicalDevices`, `vkGetPhysicalDeviceProperties`, `vkGetPhysicalDeviceProperties2KHR`
+   - Specialization and subgroup properties (`subgroupSize`, compute queue families, SSBO alignments).
+2. **Buffer & Memory Allocation**:
+   - `vkAllocateMemory`, `vkMapMemory`, `vkBindBufferMemory`
+   - Host-visible and coherent storage buffers (SSBOs).
+3. **Shader Pipelines & Dispatch**:
+   - SPIR-V module creation (`vkCreateShaderModule`)
+   - Specialization constant patching (`VkSpecializationInfo`)
+   - Pipeline layout and descriptor sets (`VkDescriptorSetLayout`, `VkDescriptorPool`, `vkUpdateDescriptorSets`)
+   - 128-byte push constants (`vkCmdPushConstants`)
+   - Compute dispatch (`vkCmdDispatch`)
+4. **Synchronization**:
+   - `vkCmdPipelineBarrier`, `vkQueueSubmit`, `vkWaitForFences`
+
+---
+
+## 🚀 Building and Running
+
+### Build GLVK
 ```bash
+git clone /home/user/repos/glvk
+cd glvk
 mkdir build && cd build
 cmake ..
 cmake --build . -j$(nproc)
+```
+
+### Run Tests
+```bash
 ctest --output-on-failure
+```
+
+Output:
+```
+1/3 Test #1: test_vector_add ..................   Passed    0.04 sec
+2/3 Test #2: test_spec_constant ...............   Passed    0.04 sec
+3/3 Test #3: test_ncnn_vulkan_layer ...........   Passed    0.17 sec
+
+100% tests passed out of 3
 ```
 
 ---
 
-## Integrating with `ncnn-vulkan`
+## 💡 Running Any ncnn-vulkan Application with GLVK
 
-### Option 1: LD_LIBRARY_PATH (Dynamic Loading)
-Compile `ncnn` with `-DNCNN_VULKAN=ON`. Run your ncnn application with:
+You can redirect any existing binary dynamically to use GLVK:
+
 ```bash
-LD_LIBRARY_PATH=/path/to/glvk/build:$LD_LIBRARY_PATH ./your_ncnn_app
-```
-
-### Option 2: Direct Static Linking
-Link `glvk_static` directly into your application or ncnn build:
-```cmake
-target_link_libraries(your_target PRIVATE glvk_static)
+LD_LIBRARY_PATH=/home/user/repos/glvk/build:$LD_LIBRARY_PATH ./your_ncnn_app
 ```

@@ -10,7 +10,51 @@ VkResult vkEnumerateInstanceVersion(uint32_t* pApiVersion) {
     return VK_SUCCESS;
 }
 
+void vkGetPhysicalDeviceExternalBufferProperties(VkPhysicalDevice physicalDevice,
+                                                 const VkPhysicalDeviceExternalBufferInfo* pExternalBufferInfo,
+                                                 VkExternalBufferProperties* pExternalBufferProperties) {
+    if (pExternalBufferProperties) {
+        memset(pExternalBufferProperties, 0, sizeof(VkExternalBufferProperties));
+    }
+}
+
+void vkGetPhysicalDeviceExternalBufferPropertiesKHR(VkPhysicalDevice physicalDevice,
+                                                    const VkPhysicalDeviceExternalBufferInfo* pExternalBufferInfo,
+                                                    VkExternalBufferProperties* pExternalBufferProperties) {
+    vkGetPhysicalDeviceExternalBufferProperties(physicalDevice, pExternalBufferInfo, pExternalBufferProperties);
+}
+
+void vkGetPhysicalDeviceFeatures2KHR(VkPhysicalDevice physicalDevice, VkPhysicalDeviceFeatures2* pFeatures) {
+    vkGetPhysicalDeviceFeatures2(physicalDevice, pFeatures);
+}
+
+void vkGetPhysicalDeviceProperties2KHR(VkPhysicalDevice physicalDevice, VkPhysicalDeviceProperties2* pProperties) {
+    vkGetPhysicalDeviceProperties2(physicalDevice, pProperties);
+}
+
+void vkGetPhysicalDeviceFormatProperties2KHR(VkPhysicalDevice physicalDevice, VkFormat format, VkFormatProperties2* pFormatProperties) {
+    vkGetPhysicalDeviceFormatProperties2(physicalDevice, format, pFormatProperties);
+}
+
+VkResult vkGetPhysicalDeviceImageFormatProperties2KHR(VkPhysicalDevice physicalDevice,
+                                                      const VkPhysicalDeviceImageFormatInfo2* pImageFormatInfo,
+                                                      VkImageFormatProperties2* pImageFormatProperties) {
+    return vkGetPhysicalDeviceImageFormatProperties2(physicalDevice, pImageFormatInfo, pImageFormatProperties);
+}
+
+void vkGetPhysicalDeviceQueueFamilyProperties2KHR(VkPhysicalDevice physicalDevice,
+                                                  uint32_t* pQueueFamilyPropertyCount,
+                                                  VkQueueFamilyProperties2* pQueueFamilyProperties) {
+    vkGetPhysicalDeviceQueueFamilyProperties2(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
+}
+
+void vkGetPhysicalDeviceMemoryProperties2KHR(VkPhysicalDevice physicalDevice,
+                                             VkPhysicalDeviceMemoryProperties2* pMemoryProperties) {
+    vkGetPhysicalDeviceMemoryProperties2(physicalDevice, pMemoryProperties);
+}
+
 #define EXPORT_PROC(name) if (strcmp(pName, #name) == 0) return (PFN_vkVoidFunction)&name;
+#define EXPORT_ALIAS(name, target) if (strcmp(pName, #name) == 0) return (PFN_vkVoidFunction)&target;
 
 PFN_vkVoidFunction vkGetInstanceProcAddr(VkInstance instance, const char* pName) {
     if (!pName) return nullptr;
@@ -20,12 +64,24 @@ PFN_vkVoidFunction vkGetInstanceProcAddr(VkInstance instance, const char* pName)
     EXPORT_PROC(vkEnumeratePhysicalDevices);
     EXPORT_PROC(vkGetPhysicalDeviceProperties);
     EXPORT_PROC(vkGetPhysicalDeviceProperties2);
+    EXPORT_ALIAS(vkGetPhysicalDeviceProperties2KHR, vkGetPhysicalDeviceProperties2KHR);
     EXPORT_PROC(vkGetPhysicalDeviceFeatures);
     EXPORT_PROC(vkGetPhysicalDeviceFeatures2);
+    EXPORT_ALIAS(vkGetPhysicalDeviceFeatures2KHR, vkGetPhysicalDeviceFeatures2KHR);
     EXPORT_PROC(vkGetPhysicalDeviceQueueFamilyProperties);
     EXPORT_PROC(vkGetPhysicalDeviceQueueFamilyProperties2);
+    EXPORT_ALIAS(vkGetPhysicalDeviceQueueFamilyProperties2KHR, vkGetPhysicalDeviceQueueFamilyProperties2KHR);
     EXPORT_PROC(vkGetPhysicalDeviceMemoryProperties);
     EXPORT_PROC(vkGetPhysicalDeviceMemoryProperties2);
+    EXPORT_ALIAS(vkGetPhysicalDeviceMemoryProperties2KHR, vkGetPhysicalDeviceMemoryProperties2KHR);
+    EXPORT_PROC(vkGetPhysicalDeviceFormatProperties);
+    EXPORT_PROC(vkGetPhysicalDeviceFormatProperties2);
+    EXPORT_ALIAS(vkGetPhysicalDeviceFormatProperties2KHR, vkGetPhysicalDeviceFormatProperties2KHR);
+    EXPORT_PROC(vkGetPhysicalDeviceImageFormatProperties);
+    EXPORT_PROC(vkGetPhysicalDeviceImageFormatProperties2);
+    EXPORT_ALIAS(vkGetPhysicalDeviceImageFormatProperties2KHR, vkGetPhysicalDeviceImageFormatProperties2KHR);
+    EXPORT_PROC(vkGetPhysicalDeviceExternalBufferProperties);
+    EXPORT_ALIAS(vkGetPhysicalDeviceExternalBufferPropertiesKHR, vkGetPhysicalDeviceExternalBufferPropertiesKHR);
     EXPORT_PROC(vkEnumerateInstanceExtensionProperties);
     EXPORT_PROC(vkEnumerateInstanceLayerProperties);
     EXPORT_PROC(vkEnumerateDeviceExtensionProperties);
@@ -43,10 +99,28 @@ PFN_vkVoidFunction vkGetInstanceProcAddr(VkInstance instance, const char* pName)
     EXPORT_PROC(vkInvalidateMappedMemoryRanges);
     EXPORT_PROC(vkBindBufferMemory);
     EXPORT_PROC(vkBindBufferMemory2);
+    EXPORT_ALIAS(vkBindBufferMemory2KHR, vkBindBufferMemory2);
+    EXPORT_PROC(vkBindImageMemory);
+    EXPORT_PROC(vkBindImageMemory2);
+    EXPORT_ALIAS(vkBindImageMemory2KHR, vkBindImageMemory2);
+    EXPORT_PROC(vkGetDeviceMemoryCommitment);
     EXPORT_PROC(vkCreateBuffer);
     EXPORT_PROC(vkDestroyBuffer);
     EXPORT_PROC(vkGetBufferMemoryRequirements);
     EXPORT_PROC(vkGetBufferMemoryRequirements2);
+    EXPORT_ALIAS(vkGetBufferMemoryRequirements2KHR, vkGetBufferMemoryRequirements2);
+    EXPORT_PROC(vkCreateBufferView);
+    EXPORT_PROC(vkDestroyBufferView);
+    EXPORT_PROC(vkCreateImage);
+    EXPORT_PROC(vkDestroyImage);
+    EXPORT_PROC(vkGetImageMemoryRequirements);
+    EXPORT_PROC(vkGetImageMemoryRequirements2);
+    EXPORT_ALIAS(vkGetImageMemoryRequirements2KHR, vkGetImageMemoryRequirements2);
+    EXPORT_PROC(vkGetImageSubresourceLayout);
+    EXPORT_PROC(vkCreateImageView);
+    EXPORT_PROC(vkDestroyImageView);
+    EXPORT_PROC(vkCreateSampler);
+    EXPORT_PROC(vkDestroySampler);
     EXPORT_PROC(vkCreateShaderModule);
     EXPORT_PROC(vkDestroyShaderModule);
     EXPORT_PROC(vkCreatePipelineLayout);
@@ -66,10 +140,12 @@ PFN_vkVoidFunction vkGetInstanceProcAddr(VkInstance instance, const char* pName)
     EXPORT_PROC(vkFreeDescriptorSets);
     EXPORT_PROC(vkUpdateDescriptorSets);
     EXPORT_PROC(vkGetDescriptorSetLayoutSupport);
+    EXPORT_ALIAS(vkGetDescriptorSetLayoutSupportKHR, vkGetDescriptorSetLayoutSupport);
     EXPORT_PROC(vkCreateCommandPool);
     EXPORT_PROC(vkDestroyCommandPool);
     EXPORT_PROC(vkResetCommandPool);
     EXPORT_PROC(vkTrimCommandPool);
+    EXPORT_ALIAS(vkTrimCommandPoolKHR, vkTrimCommandPoolKHR);
     EXPORT_PROC(vkAllocateCommandBuffers);
     EXPORT_PROC(vkFreeCommandBuffers);
     EXPORT_PROC(vkBeginCommandBuffer);
@@ -84,6 +160,12 @@ PFN_vkVoidFunction vkGetInstanceProcAddr(VkInstance instance, const char* pName)
     EXPORT_PROC(vkCmdCopyBuffer);
     EXPORT_PROC(vkCmdFillBuffer);
     EXPORT_PROC(vkCmdUpdateBuffer);
+    EXPORT_PROC(vkCmdCopyBufferToImage);
+    EXPORT_PROC(vkCmdCopyImage);
+    EXPORT_PROC(vkCmdCopyImageToBuffer);
+    EXPORT_PROC(vkCmdExecuteCommands);
+    EXPORT_PROC(vkCmdResolveImage);
+    EXPORT_PROC(vkCmdBindIndexBuffer);
     EXPORT_PROC(vkQueueSubmit);
     EXPORT_PROC(vkQueueWaitIdle);
     EXPORT_PROC(vkCreateFence);

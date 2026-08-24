@@ -1,11 +1,11 @@
 #pragma once
 
 #include "glvk_internal.hpp"
-#include <spirv_glsl.hpp>
+#include <vector>
+#include <cstdint>
 
-GLuint CompileSpirvToGLProgram(
+GLuint CompileSPIRVToGLProgram(
     const std::vector<uint32_t>& spirv_words,
     const VkSpecializationInfo* spec_info,
-    VkPipelineLayout layout,
-    std::vector<PushConstantUniformMap>& out_push_uniforms
+    std::vector<GLVKPushConstantUniform>& out_push_uniforms
 );

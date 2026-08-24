@@ -18,7 +18,7 @@ VkResult vkAllocateMemory(VkDevice device,
     gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, mem->gl_buffer);
 
     if (gl.BufferStorage) {
-        GLbitfield flags = GL_DYNAMIC_STORAGE_BIT | GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;
+        GLbitfield flags = GL_DYNAMIC_STORAGE_BIT | GL_MAP_READ_BIT | GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
         gl.BufferStorage(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)mem->size, nullptr, flags);
     } else {
         gl.BufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)mem->size, nullptr, GL_DYNAMIC_DRAW);
@@ -57,21 +57,33 @@ VkResult vkMapMemory(VkDevice device,
 
     VkDeviceSize map_size = (size == VK_WHOLE_SIZE) ? (memory->size - offset) : size;
 
+    if (memory->mapped_ptr) {
+        *ppData = (uint8_t*)memory->mapped_ptr + offset;
+        return VK_SUCCESS;
+    }
+
     gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffer);
 
-    GLbitfield access = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;
-    void* ptr = gl.MapBufferRange(GL_SHADER_STORAGE_BUFFER, (GLintptr)offset, (GLsizeiptr)map_size, access);
+    GLbitfield access = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
+    void* ptr = gl.MapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)memory->size, access);
     gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    if (!ptr) {
+        // Fallback without persistent flags if not supported
+        gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffer);
+        ptr = gl.MapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)memory->size, GL_MAP_READ_BIT | GL_MAP_WRITE_BIT);
+        gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    }
 
     if (!ptr) {
         return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
     memory->mapped_ptr = ptr;
-    memory->mapped_offset = offset;
-    memory->mapped_size = map_size;
+    memory->mapped_offset = 0;
+    memory->mapped_size = memory->size;
 
-    *ppData = ptr;
+    *ppData = (uint8_t*)ptr + offset;
     return VK_SUCCESS;
 }
 
@@ -91,7 +103,7 @@ VkResult vkFlushMappedMemoryRanges(VkDevice device,
                                    uint32_t memoryRangeCount,
                                    const VkMappedMemoryRange* pMemoryRanges) {
     if (gl.MemoryBarrier) {
-        gl.MemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
+        gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
     }
     return VK_SUCCESS;
 }
@@ -100,7 +112,7 @@ VkResult vkInvalidateMappedMemoryRanges(VkDevice device,
                                        uint32_t memoryRangeCount,
                                        const VkMappedMemoryRange* pMemoryRanges) {
     if (gl.MemoryBarrier) {
-        gl.MemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
+        gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
     }
     return VK_SUCCESS;
 }
@@ -125,6 +137,27 @@ VkResult vkBindBufferMemory2(VkDevice device,
         if (res != VK_SUCCESS) return res;
     }
     return VK_SUCCESS;
+}
+
+VkResult vkBindImageMemory(VkDevice device,
+                           VkImage image,
+                           VkDeviceMemory memory,
+                           VkDeviceSize memoryOffset) {
+    return VK_SUCCESS;
+}
+
+VkResult vkBindImageMemory2(VkDevice device,
+                            uint32_t bindInfoCount,
+                            const VkBindImageMemoryInfo* pBindInfos) {
+    return VK_SUCCESS;
+}
+
+void vkGetDeviceMemoryCommitment(VkDevice device,
+                                 VkDeviceMemory memory,
+                                 VkDeviceSize* pCommittedMemoryInBytes) {
+    if (pCommittedMemoryInBytes && memory) {
+        *pCommittedMemoryInBytes = memory->size;
+    }
 }
 
 } // extern "C"

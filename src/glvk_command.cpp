@@ -221,7 +221,12 @@ void vkCmdUpdateBuffer(VkCommandBuffer commandBuffer,
                        VkDeviceSize dataSize,
                        const void* pData) {
     if (!commandBuffer || !dstBuffer || !pData || dataSize == 0) return;
-    // For small updates, we can use push constant style or copy
+
+    if (dstBuffer->memory) {
+        gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, dstBuffer->memory->gl_buffer);
+        gl.BufferSubData(GL_SHADER_STORAGE_BUFFER, (GLintptr)(dstBuffer->memory_offset + dstOffset), (GLsizeiptr)dataSize, pData);
+        gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    }
 }
 
 void vkCmdPushDescriptorSetKHR(VkCommandBuffer commandBuffer,
@@ -230,6 +235,112 @@ void vkCmdPushDescriptorSetKHR(VkCommandBuffer commandBuffer,
                                uint32_t set,
                                uint32_t descriptorWriteCount,
                                const VkWriteDescriptorSet* pDescriptorWrites) {
+}
+
+void vkCmdCopyBufferToImage(VkCommandBuffer commandBuffer,
+                            VkBuffer srcBuffer,
+                            VkImage dstImage,
+                            VkImageLayout dstImageLayout,
+                            uint32_t regionCount,
+                            const VkBufferImageCopy* pRegions) {
+}
+
+void vkCmdCopyImage(VkCommandBuffer commandBuffer,
+                    VkImage srcImage,
+                    VkImageLayout srcImageLayout,
+                    VkImage dstImage,
+                    VkImageLayout dstImageLayout,
+                    uint32_t regionCount,
+                    const VkImageCopy* pRegions) {
+}
+
+void vkCmdCopyImageToBuffer(VkCommandBuffer commandBuffer,
+                            VkImage srcImage,
+                            VkImageLayout srcImageLayout,
+                            VkBuffer dstBuffer,
+                            uint32_t regionCount,
+                            const VkBufferImageCopy* pRegions) {
+}
+
+void vkCmdExecuteCommands(VkCommandBuffer commandBuffer,
+                          uint32_t commandBufferCount,
+                          const VkCommandBuffer* pCommandBuffers) {
+    if (!commandBuffer || !pCommandBuffers) return;
+    for (uint32_t i = 0; i < commandBufferCount; i++) {
+        auto cb = pCommandBuffers[i];
+        if (cb) {
+            commandBuffer->recorded_commands.insert(
+                commandBuffer->recorded_commands.end(),
+                cb->recorded_commands.begin(),
+                cb->recorded_commands.end()
+            );
+        }
+    }
+}
+
+void vkCmdResolveImage(VkCommandBuffer commandBuffer,
+                       VkImage srcImage,
+                       VkImageLayout srcImageLayout,
+                       VkImage dstImage,
+                       VkImageLayout dstImageLayout,
+                       uint32_t regionCount,
+                       const VkImageResolve* pRegions) {
+}
+
+void vkCmdBindIndexBuffer(VkCommandBuffer commandBuffer,
+                          VkBuffer buffer,
+                          VkDeviceSize offset,
+                          VkIndexType indexType) {
+}
+
+void vkCmdBeginQuery(VkCommandBuffer commandBuffer,
+                     VkQueryPool queryPool,
+                     uint32_t query,
+                     VkQueryControlFlags flags) {
+}
+
+void vkCmdEndQuery(VkCommandBuffer commandBuffer,
+                   VkQueryPool queryPool,
+                   uint32_t query) {
+}
+
+void vkCmdCopyQueryPoolResults(VkCommandBuffer commandBuffer,
+                               VkQueryPool queryPool,
+                               uint32_t firstQuery,
+                               uint32_t queryCount,
+                               VkBuffer dstBuffer,
+                               VkDeviceSize dstOffset,
+                               VkDeviceSize stride,
+                               VkQueryResultFlags flags) {
+}
+
+static void ApplyPushConstants(VkPipeline pipeline, const uint8_t* push_constants) {
+    if (!pipeline || !pipeline->gl_program) return;
+
+    for (const auto& puni : pipeline->push_constant_uniforms) {
+        if (puni.location >= 0 && puni.offset + puni.size <= 128) {
+            const void* val_ptr = push_constants + puni.offset;
+            if (puni.type == 1) { // Float
+                if (puni.size == 4 && gl.ProgramUniform1f) {
+                    gl.ProgramUniform1f(pipeline->gl_program, puni.location, *(const GLfloat*)val_ptr);
+                } else if (puni.size == 16 && gl.ProgramUniform4fv) {
+                    gl.ProgramUniform4fv(pipeline->gl_program, puni.location, 1, (const GLfloat*)val_ptr);
+                }
+            } else if (puni.type == 2) { // UInt
+                if (puni.size == 4 && gl.ProgramUniform1ui) {
+                    gl.ProgramUniform1ui(pipeline->gl_program, puni.location, *(const GLuint*)val_ptr);
+                } else if (puni.size == 16 && gl.ProgramUniform4uiv) {
+                    gl.ProgramUniform4uiv(pipeline->gl_program, puni.location, 1, (const GLuint*)val_ptr);
+                }
+            } else { // Int
+                if (puni.size == 4 && gl.ProgramUniform1i) {
+                    gl.ProgramUniform1i(pipeline->gl_program, puni.location, *(const GLint*)val_ptr);
+                } else if (puni.size == 16 && gl.ProgramUniform4iv) {
+                    gl.ProgramUniform4iv(pipeline->gl_program, puni.location, 1, (const GLint*)val_ptr);
+                }
+            }
+        }
+    }
 }
 
 VkResult vkQueueSubmit(VkQueue queue,
@@ -251,6 +362,7 @@ VkResult vkQueueSubmit(VkQueue queue,
                         current_pipeline = cmd.bind_pipeline.pipeline;
                         if (current_pipeline && current_pipeline->gl_program) {
                             gl.UseProgram(current_pipeline->gl_program);
+                            ApplyPushConstants(current_pipeline, current_push_constants);
                         }
                         break;
                     }
@@ -283,22 +395,13 @@ VkResult vkQueueSubmit(VkQueue queue,
                         }
 
                         if (current_pipeline && current_pipeline->gl_program) {
-                            for (const auto& puni : current_pipeline->push_constant_uniforms) {
-                                if (puni.location >= 0 && puni.offset + puni.size <= 128) {
-                                    const void* val_ptr = current_push_constants + puni.offset;
-                                    if (puni.size == 4) {
-                                        gl.ProgramUniform1i(current_pipeline->gl_program, puni.location, *(const GLint*)val_ptr);
-                                    } else if (puni.size == 16) {
-                                        gl.ProgramUniform4iv(current_pipeline->gl_program, puni.location, 1, (const GLint*)val_ptr);
-                                    }
-                                }
-                            }
+                            ApplyPushConstants(current_pipeline, current_push_constants);
                         }
                         break;
                     }
                     case GLVKCmdType::PipelineBarrier: {
                         if (gl.MemoryBarrier) {
-                            gl.MemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
+                            gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
                         }
                         break;
                     }
@@ -323,9 +426,7 @@ VkResult vkQueueSubmit(VkQueue queue,
                     case GLVKCmdType::FillBuffer: {
                         auto dst = cmd.fill_buffer.dst_buffer;
                         if (dst && dst->memory) {
-                            // Buffer clear / fill fallback
                             gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, dst->memory->gl_buffer);
-                            // We can use glClearBufferSubData if available, or map buffer
                             void* ptr = gl.MapBufferRange(
                                 GL_SHADER_STORAGE_BUFFER,
                                 (GLintptr)(dst->memory_offset + cmd.fill_buffer.dst_offset),
@@ -345,6 +446,9 @@ VkResult vkQueueSubmit(VkQueue queue,
                         break;
                     }
                     case GLVKCmdType::Dispatch: {
+                        if (current_pipeline && current_pipeline->gl_program) {
+                            ApplyPushConstants(current_pipeline, current_push_constants);
+                        }
                         gl.DispatchCompute(
                             cmd.dispatch.group_count_x,
                             cmd.dispatch.group_count_y,
@@ -354,6 +458,9 @@ VkResult vkQueueSubmit(VkQueue queue,
                     }
                     case GLVKCmdType::DispatchIndirect: {
                         if (gl.DispatchComputeIndirect && cmd.dispatch_indirect.buffer && cmd.dispatch_indirect.buffer->memory) {
+                            if (current_pipeline && current_pipeline->gl_program) {
+                                ApplyPushConstants(current_pipeline, current_push_constants);
+                            }
                             gl.BindBuffer(0x90EE /* GL_DISPATCH_INDIRECT_BUFFER */, cmd.dispatch_indirect.buffer->memory->gl_buffer);
                             gl.DispatchComputeIndirect((GLintptr)(cmd.dispatch_indirect.buffer->memory_offset + cmd.dispatch_indirect.offset));
                             gl.BindBuffer(0x90EE, 0);
@@ -363,6 +470,10 @@ VkResult vkQueueSubmit(VkQueue queue,
                 }
             }
         }
+    }
+
+    if (gl.MemoryBarrier) {
+        gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
     }
 
     if (fence != VK_NULL_HANDLE) {

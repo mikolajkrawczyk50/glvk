@@ -1,47 +1,45 @@
 #include "glvk_shader.hpp"
+#include "glvk_internal.hpp"
+#include <spirv_glsl.hpp>
 #include <iostream>
 #include <vector>
-#include <cstring>
 
-GLuint CompileSpirvToGLProgram(
+GLuint CompileSPIRVToGLProgram(
     const std::vector<uint32_t>& spirv_words,
     const VkSpecializationInfo* spec_info,
-    VkPipelineLayout layout,
-    std::vector<PushConstantUniformMap>& out_push_uniforms) {
-
+    std::vector<GLVKPushConstantUniform>& out_push_uniforms)
+{
     try {
-        spirv_cross::CompilerGLSL glsl(spirv_words.data(), spirv_words.size());
+        spirv_cross::CompilerGLSL glsl(spirv_words);
+
+        // Apply Specialization Constants if provided
+        if (spec_info && spec_info->mapEntryCount > 0 && spec_info->pData) {
+            auto constants = glsl.get_specialization_constants();
+            const uint8_t* spec_data = static_cast<const uint8_t*>(spec_info->pData);
+
+            for (uint32_t i = 0; i < spec_info->mapEntryCount; i++) {
+                const auto& entry = spec_info->pMapEntries[i];
+                for (const auto& sc : constants) {
+                    if (sc.constant_id == entry.constantID) {
+                        auto& c = glsl.get_constant(sc.id);
+                        if (entry.size == sizeof(uint32_t)) {
+                            uint32_t val = *reinterpret_cast<const uint32_t*>(spec_data + entry.offset);
+                            c.m.c[0].r[0].u32 = val;
+                        } else if (entry.size == sizeof(uint64_t)) {
+                            uint64_t val = *reinterpret_cast<const uint64_t*>(spec_data + entry.offset);
+                            c.m.c[0].r[0].u64 = val;
+                        }
+                    }
+                }
+            }
+        }
 
         spirv_cross::CompilerGLSL::Options options;
         options.version = 430;
         options.es = false;
         options.vulkan_semantics = false;
         options.emit_push_constant_as_uniform_buffer = false;
-        options.enable_420pack_extension = true;
         glsl.set_common_options(options);
-
-        // Apply Specialization Constants
-        if (spec_info && spec_info->mapEntryCount > 0 && spec_info->pData) {
-            auto scs = glsl.get_specialization_constants();
-            const uint8_t* spec_data = (const uint8_t*)spec_info->pData;
-
-            for (uint32_t i = 0; i < spec_info->mapEntryCount; i++) {
-                const auto& entry = spec_info->pMapEntries[i];
-                for (const auto& sc : scs) {
-                    if (sc.constant_id == entry.constantID) {
-                        auto& c = glsl.get_constant(sc.id);
-                        const auto& type = glsl.get_type(c.constant_type);
-                        if (type.basetype == spirv_cross::SPIRType::Float) {
-                            c.m.c[0].r[0].f32 = *(const float*)(spec_data + entry.offset);
-                        } else if (type.basetype == spirv_cross::SPIRType::Int) {
-                            c.m.c[0].r[0].i32 = *(const int32_t*)(spec_data + entry.offset);
-                        } else {
-                            c.m.c[0].r[0].u32 = *(const uint32_t*)(spec_data + entry.offset);
-                        }
-                    }
-                }
-            }
-        }
 
         std::string glsl_source = glsl.compile();
 
@@ -85,16 +83,33 @@ GLuint CompileSpirvToGLProgram(
             const auto& block_type = glsl.get_type(push_block.base_type_id);
             for (size_t i = 0; i < block_type.member_types.size(); i++) {
                 std::string member_name = glsl.get_member_name(push_block.base_type_id, (uint32_t)i);
-                std::string uniform_name = push_block.name + "." + member_name;
-                GLint loc = gl.GetUniformLocation(program, uniform_name.c_str());
-                if (loc < 0) {
-                    // Try without block name
-                    loc = gl.GetUniformLocation(program, member_name.c_str());
+                size_t offset = glsl.type_struct_member_offset(block_type, (uint32_t)i);
+                size_t size = glsl.get_declared_struct_member_size(block_type, (uint32_t)i);
+                const auto& member_type = glsl.get_type(block_type.member_types[i]);
+
+                uint32_t type_enum = 0; // 0 = int, 1 = float, 2 = uint
+                if (member_type.basetype == spirv_cross::SPIRType::Float) {
+                    type_enum = 1;
+                } else if (member_type.basetype == spirv_cross::SPIRType::UInt) {
+                    type_enum = 2;
                 }
+
+                GLint loc = gl.GetUniformLocation(program, member_name.c_str());
+                if (loc < 0 && !push_block.name.empty()) {
+                    std::string u1 = push_block.name + "." + member_name;
+                    loc = gl.GetUniformLocation(program, u1.c_str());
+                }
+                if (loc < 0 && !push_block.name.empty()) {
+                    std::string u2 = push_block.name + "_" + member_name;
+                    loc = gl.GetUniformLocation(program, u2.c_str());
+                }
+                if (loc < 0) {
+                    std::string u3 = "_" + member_name;
+                    loc = gl.GetUniformLocation(program, u3.c_str());
+                }
+
                 if (loc >= 0) {
-                    size_t offset = glsl.type_struct_member_offset(block_type, (uint32_t)i);
-                    size_t size = glsl.get_declared_struct_member_size(block_type, (uint32_t)i);
-                    out_push_uniforms.push_back({ loc, (uint32_t)offset, (uint32_t)size });
+                    out_push_uniforms.push_back({ loc, (uint32_t)offset, (uint32_t)size, type_enum });
                 }
             }
         }

@@ -11,12 +11,11 @@ VkResult vkCreatePipelineLayout(VkDevice device,
     if (!device || !pCreateInfo || !pPipelineLayout) return VK_ERROR_INITIALIZATION_FAILED;
 
     auto layout = new VkPipelineLayout_T();
-    if (pCreateInfo->pSetLayouts && pCreateInfo->setLayoutCount > 0) {
+    if (pCreateInfo->setLayoutCount > 0 && pCreateInfo->pSetLayouts) {
         layout->set_layouts.assign(pCreateInfo->pSetLayouts, pCreateInfo->pSetLayouts + pCreateInfo->setLayoutCount);
     }
-    if (pCreateInfo->pPushConstantRanges && pCreateInfo->pushConstantRangeCount > 0) {
-        layout->push_constant_ranges.assign(pCreateInfo->pPushConstantRanges,
-                                            pCreateInfo->pPushConstantRanges + pCreateInfo->pushConstantRangeCount);
+    if (pCreateInfo->pushConstantRangeCount > 0 && pCreateInfo->pPushConstantRanges) {
+        layout->push_constant_ranges.assign(pCreateInfo->pPushConstantRanges, pCreateInfo->pPushConstantRanges + pCreateInfo->pushConstantRangeCount);
     }
 
     *pPipelineLayout = layout;
@@ -31,11 +30,11 @@ void vkDestroyPipelineLayout(VkDevice device,
 }
 
 VkResult vkCreateComputePipelines(VkDevice device,
-                                  VkPipelineCache pipelineCache,
-                                  uint32_t createInfoCount,
-                                  const VkComputePipelineCreateInfo* pCreateInfos,
-                                  const VkAllocationCallbacks* pAllocator,
-                                  VkPipeline* pPipelines) {
+                                   VkPipelineCache pipelineCache,
+                                   uint32_t createInfoCount,
+                                   const VkComputePipelineCreateInfo* pCreateInfos,
+                                   const VkAllocationCallbacks* pAllocator,
+                                   VkPipeline* pPipelines) {
     if (!device || !pCreateInfos || !pPipelines) return VK_ERROR_INITIALIZATION_FAILED;
 
     for (uint32_t i = 0; i < createInfoCount; i++) {
@@ -48,10 +47,9 @@ VkResult vkCreateComputePipelines(VkDevice device,
         auto pipe = new VkPipeline_T();
         pipe->layout = info.layout;
 
-        pipe->gl_program = CompileSpirvToGLProgram(
+        pipe->gl_program = CompileSPIRVToGLProgram(
             info.stage.module->spirv_words,
             info.stage.pSpecializationInfo,
-            info.layout,
             pipe->push_constant_uniforms
         );
 
@@ -100,7 +98,7 @@ VkResult vkGetPipelineCacheData(VkDevice device,
                                 void* pData) {
     if (!pDataSize) return VK_ERROR_INITIALIZATION_FAILED;
     if (!pData) {
-        *pDataSize = 0;
+        *pDataSize = 32; // Header size
         return VK_SUCCESS;
     }
     *pDataSize = 0;

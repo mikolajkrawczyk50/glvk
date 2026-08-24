@@ -81,16 +81,16 @@
 #define GL_MAX_COMPUTE_SHARED_MEMORY_SIZE 0x8262
 #endif
 
-#ifndef GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT
-#define GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT 0x90DF
-#endif
-
 #ifndef GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS
-#define GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS 0x90DD
+#define GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS 0x90D3
 #endif
 
 #ifndef GL_MAX_SHADER_STORAGE_BLOCK_SIZE
-#define GL_MAX_SHADER_STORAGE_BLOCK_SIZE 0x90DE
+#define GL_MAX_SHADER_STORAGE_BLOCK_SIZE 0x90D6
+#endif
+
+#ifndef GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT
+#define GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT 0x90DF
 #endif
 
 #ifndef GL_COPY_READ_BUFFER
@@ -101,17 +101,22 @@
 #define GL_COPY_WRITE_BUFFER 0x8F37
 #endif
 
-#ifndef GL_UNIFORM_BUFFER
-#define GL_UNIFORM_BUFFER 0x8A11
+#ifndef GL_DISPATCH_INDIRECT_BUFFER
+#define GL_DISPATCH_INDIRECT_BUFFER 0x90EE
 #endif
 
-// OpenGL Function Pointers
+#ifndef GL_ACTIVE_UNIFORMS
+#define GL_ACTIVE_UNIFORMS 0x8B86
+#endif
+
+// Function pointer signatures
 typedef void (APIENTRYP PFNGLDISPATCHCOMPUTEPROC)(GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z);
 typedef void (APIENTRYP PFNGLDISPATCHCOMPUTEINDIRECTPROC)(GLintptr indirect);
 typedef void (APIENTRYP PFNGLBINDBUFFERBASEPROC)(GLenum target, GLuint index, GLuint buffer);
 typedef void (APIENTRYP PFNGLBINDBUFFERRANGEPROC)(GLenum target, GLuint index, GLuint buffer, GLintptr offset, GLsizeiptr size);
 typedef void (APIENTRYP PFNGLBUFFERSTORAGEPROC)(GLenum target, GLsizeiptr size, const void *data, GLbitfield flags);
 typedef void (APIENTRYP PFNGLMEMORYBARRIERPROC)(GLbitfield barriers);
+
 typedef void (APIENTRYP PFNGLGENBUFFERSPROC)(GLsizei n, GLuint *buffers);
 typedef void (APIENTRYP PFNGLDELETEBUFFERSPROC)(GLsizei n, const GLuint *buffers);
 typedef void (APIENTRYP PFNGLBINDBUFFERPROC)(GLenum target, GLuint buffer);
@@ -146,6 +151,8 @@ typedef void (APIENTRYP PFNGLWAITSYNCPROC)(GLsync sync, GLbitfield flags, GLuint
 
 typedef GLint (APIENTRYP PFNGLGETUNIFORMLOCATIONPROC)(GLuint program, const GLchar *name);
 typedef void (APIENTRYP PFNGLPROGRAMUNIFORM1IPROC)(GLuint program, GLint location, GLint v0);
+typedef void (APIENTRYP PFNGLPROGRAMUNIFORM1UIPROC)(GLuint program, GLint location, GLuint v0);
+typedef void (APIENTRYP PFNGLPROGRAMUNIFORM1FPROC)(GLuint program, GLint location, GLfloat v0);
 typedef void (APIENTRYP PFNGLPROGRAMUNIFORM4FVPROC)(GLuint program, GLint location, GLsizei count, const GLfloat *value);
 typedef void (APIENTRYP PFNGLPROGRAMUNIFORM4IVPROC)(GLuint program, GLint location, GLsizei count, const GLint *value);
 typedef void (APIENTRYP PFNGLPROGRAMUNIFORM4UIVPROC)(GLuint program, GLint location, GLsizei count, const GLuint *value);
@@ -194,6 +201,8 @@ struct GLFunctions {
 
     PFNGLGETUNIFORMLOCATIONPROC GetUniformLocation = nullptr;
     PFNGLPROGRAMUNIFORM1IPROC ProgramUniform1i = nullptr;
+    PFNGLPROGRAMUNIFORM1UIPROC ProgramUniform1ui = nullptr;
+    PFNGLPROGRAMUNIFORM1FPROC ProgramUniform1f = nullptr;
     PFNGLPROGRAMUNIFORM4FVPROC ProgramUniform4fv = nullptr;
     PFNGLPROGRAMUNIFORM4IVPROC ProgramUniform4iv = nullptr;
     PFNGLPROGRAMUNIFORM4UIVPROC ProgramUniform4uiv = nullptr;
