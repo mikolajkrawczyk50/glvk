@@ -5,6 +5,8 @@
 #include "gl_backend.hpp"
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
+#include <mutex>
 #include <memory>
 #include <string>
 #include <cstdlib>
@@ -223,3 +225,6 @@ struct VkCommandPool_T {
     uint32_t queue_family_index = 0;
     VkCommandPoolCreateFlags flags = 0;
 };
+
+extern std::unordered_set<VkDeviceMemory_T*> g_active_device_memories;
+extern std::mutex g_memory_mutex;

@@ -410,6 +410,18 @@ VkResult vkQueueSubmit(VkQueue queue,
     uint8_t current_push_constants[128] = {0};
     uint32_t gpu_work_count = 0;
 
+    // Sync all host-modified shadow buffers to GPU buffers before execution
+    {
+        std::lock_guard<std::mutex> lock(g_memory_mutex);
+        for (auto mem : g_active_device_memories) {
+            if (mem && mem->shadow_ptr && mem->gl_buffer) {
+                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, mem->gl_buffer);
+                gl.BufferSubData(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)mem->size, mem->shadow_ptr);
+                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+            }
+        }
+    }
+
     for (uint32_t s = 0; s < submitCount; s++) {
         const auto& submit = pSubmits[s];
         for (uint32_t c = 0; c < submit.commandBufferCount; c++) {
@@ -492,14 +504,6 @@ VkResult vkQueueSubmit(VkQueue queue,
                         auto src = cmd.copy_buffer.src_buffer;
                         auto dst = cmd.copy_buffer.dst_buffer;
                         if (src && dst && src->memory && dst->memory) {
-                            if (src->memory->shadow_ptr) {
-                                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, src->memory->gl_buffer);
-                                gl.BufferSubData(GL_SHADER_STORAGE_BUFFER, (GLintptr)(src->memory_offset + cmd.copy_buffer.src_offset),
-                                                 (GLsizeiptr)cmd.copy_buffer.size,
-                                                 (const uint8_t*)src->memory->shadow_ptr + src->memory_offset + cmd.copy_buffer.src_offset);
-                                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-                            }
-
                             gl.BindBuffer(GL_COPY_READ_BUFFER, src->memory->gl_buffer);
                             gl.BindBuffer(GL_COPY_WRITE_BUFFER, dst->memory->gl_buffer);
                             gl.CopyBufferSubData(
@@ -511,14 +515,6 @@ VkResult vkQueueSubmit(VkQueue queue,
                             );
                             gl.BindBuffer(GL_COPY_READ_BUFFER, 0);
                             gl.BindBuffer(GL_COPY_WRITE_BUFFER, 0);
-
-                            if (dst->memory->shadow_ptr) {
-                                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, dst->memory->gl_buffer);
-                                gl.GetBufferSubData(GL_SHADER_STORAGE_BUFFER, (GLintptr)(dst->memory_offset + cmd.copy_buffer.dst_offset),
-                                                    (GLsizeiptr)cmd.copy_buffer.size,
-                                                    (uint8_t*)dst->memory->shadow_ptr + dst->memory_offset + cmd.copy_buffer.dst_offset);
-                                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-                            }
                         }
                         break;
                     }

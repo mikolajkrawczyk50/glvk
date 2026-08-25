@@ -95,6 +95,18 @@ VkResult vkWaitForFences(VkDevice device,
         }
     }
 
+    // Sync all GPU buffer outputs back to host shadow buffers
+    {
+        std::lock_guard<std::mutex> lock(g_memory_mutex);
+        for (auto mem : g_active_device_memories) {
+            if (mem && mem->shadow_ptr && mem->gl_buffer) {
+                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, mem->gl_buffer);
+                gl.GetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)mem->size, mem->shadow_ptr);
+                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+            }
+        }
+    }
+
     return VK_SUCCESS;
 }
 

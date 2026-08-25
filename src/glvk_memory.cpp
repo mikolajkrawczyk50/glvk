@@ -11,6 +11,9 @@ struct PooledBuffer {
     uint32_t memory_type_index = 0;
 };
 
+std::unordered_set<VkDeviceMemory_T*> g_active_device_memories;
+std::mutex g_memory_mutex;
+
 static std::mutex g_pool_mutex;
 static std::vector<PooledBuffer> g_buffer_pool;
 static size_t g_pool_total_bytes = 0;
@@ -124,6 +127,11 @@ VkResult vkAllocateMemory(VkDevice device,
     mem->gl_buffers = { mem->gl_buffer };
     mem->bank_sizes = { mem->size };
 
+    {
+        std::lock_guard<std::mutex> lock(g_memory_mutex);
+        g_active_device_memories.insert(mem);
+    }
+
     *pMemory = mem;
     return VK_SUCCESS;
 }
@@ -132,6 +140,11 @@ void vkFreeMemory(VkDevice device,
                   VkDeviceMemory memory,
                   const VkAllocationCallbacks* pAllocator) {
     if (!memory) return;
+
+    {
+        std::lock_guard<std::mutex> lock(g_memory_mutex);
+        g_active_device_memories.erase(memory);
+    }
 
     if (memory->shadow_ptr) {
         free(memory->shadow_ptr);
@@ -194,12 +207,17 @@ VkResult vkMapMemory(VkDevice device,
             return VK_ERROR_OUT_OF_HOST_MEMORY;
         }
         memset(memory->shadow_ptr, 0, (size_t)memory->size);
-        if (memory->gl_buffer) {
-            GLVKContextScope scope;
-            gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffer);
-            gl.GetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)memory->size, memory->shadow_ptr);
-            gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    }
+
+    if (memory->gl_buffer) {
+        GLVKContextScope scope;
+        if (gl.MemoryBarrier) {
+            gl.MemoryBarrier(0xFFFFFFFF /* GL_ALL_BARRIER_BITS */);
         }
+        glFinish();
+        gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffer);
+        gl.GetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)memory->size, memory->shadow_ptr);
+        gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
 
     *ppData = (uint8_t*)memory->shadow_ptr + offset;
