@@ -7,6 +7,27 @@
 #include <unordered_map>
 #include <memory>
 #include <string>
+#include <cstdlib>
+#include <cstring>
+#include <cstdio>
+#include <iostream>
+
+inline int GetGLVKLogLevel() {
+    static int level = []() {
+        const char* env = getenv("GLVK_DEBUG");
+        if (!env) env = getenv("GLVK_LOG");
+        if (!env) env = getenv("GLVK_LOG_LEVEL");
+        if (env) {
+            if (strcmp(env, "1") == 0 || strcasecmp(env, "true") == 0 || strcasecmp(env, "info") == 0) return 1;
+            if (strcmp(env, "2") == 0 || strcasecmp(env, "debug") == 0) return 2;
+            if (strcmp(env, "3") == 0 || strcasecmp(env, "trace") == 0) return 3;
+            if (strcmp(env, "0") == 0 || strcasecmp(env, "false") == 0) return 0;
+            return atoi(env);
+        }
+        return 0;
+    }();
+    return level;
+}
 
 struct GLVKPushConstantUniform {
     GLint location;
@@ -78,6 +99,7 @@ struct GLVKBufferBindingInfo {
     GLuint gl_buffer = 0;
     VkDeviceSize offset = 0;
     VkDeviceSize range = 0;
+    uint32_t set_index = 0; // Vulkan descriptor set index for flat binding calculation
 };
 
 struct VkDescriptorSetLayout_T {
@@ -110,6 +132,7 @@ enum class GLVKCmdType {
     PipelineBarrier,
     CopyBuffer,
     FillBuffer,
+    UpdateBuffer,
     Dispatch,
     DispatchIndirect
 };
@@ -152,6 +175,13 @@ struct GLVKCmd {
             VkDeviceSize size;
             uint32_t data;
         } fill_buffer;
+
+        struct {
+            VkBuffer dst_buffer;
+            VkDeviceSize dst_offset;
+            VkDeviceSize data_size;
+            void* data_copy; // dynamically allocated, freed after execution
+        } update_buffer;
 
         struct {
             uint32_t group_count_x;

@@ -157,10 +157,12 @@ typedef void (APIENTRYP PFNGLPROGRAMUNIFORM4FVPROC)(GLuint program, GLint locati
 typedef void (APIENTRYP PFNGLPROGRAMUNIFORM4IVPROC)(GLuint program, GLint location, GLsizei count, const GLint *value);
 typedef void (APIENTRYP PFNGLPROGRAMUNIFORM4UIVPROC)(GLuint program, GLint location, GLsizei count, const GLuint *value);
 
+typedef GLenum (APIENTRYP PFNGLGETERRORPROC)(void);
 typedef void (APIENTRYP PFNGLGETINTEGERI_VPROC)(GLenum target, GLuint index, GLint *data);
 typedef void (APIENTRYP PFNGLGETINTEGER64VPROC)(GLenum pname, GLint64 *params);
 
 struct GLFunctions {
+    PFNGLGETERRORPROC GetError = nullptr;
     PFNGLDISPATCHCOMPUTEPROC DispatchCompute = nullptr;
     PFNGLDISPATCHCOMPUTEINDIRECTPROC DispatchComputeIndirect = nullptr;
     PFNGLBINDBUFFERBASEPROC BindBufferBase = nullptr;

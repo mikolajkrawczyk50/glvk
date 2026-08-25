@@ -1,6 +1,8 @@
 #include "glvk_internal.hpp"
 #include <iostream>
 #include <cstring>
+#include <cstdlib>
+#include <iomanip>
 
 extern "C" {
 
@@ -203,7 +205,7 @@ void vkCmdFillBuffer(VkCommandBuffer commandBuffer,
                      VkBuffer dstBuffer,
                      VkDeviceSize dstOffset,
                      VkDeviceSize size,
-                       uint32_t data) {
+                     uint32_t data) {
     if (!commandBuffer || !dstBuffer) return;
 
     GLVKCmd cmd;
@@ -222,12 +224,16 @@ void vkCmdUpdateBuffer(VkCommandBuffer commandBuffer,
                        const void* pData) {
     if (!commandBuffer || !dstBuffer || !pData || dataSize == 0) return;
 
-    GLVKContextScope scope;
-    if (dstBuffer->memory) {
-        gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, dstBuffer->memory->gl_buffer);
-        gl.BufferSubData(GL_SHADER_STORAGE_BUFFER, (GLintptr)(dstBuffer->memory_offset + dstOffset), (GLsizeiptr)dataSize, pData);
-        gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    GLVKCmd cmd;
+    cmd.type = GLVKCmdType::UpdateBuffer;
+    cmd.update_buffer.dst_buffer = dstBuffer;
+    cmd.update_buffer.dst_offset = dstOffset;
+    cmd.update_buffer.data_size = dataSize;
+    cmd.update_buffer.data_copy = malloc((size_t)dataSize);
+    if (cmd.update_buffer.data_copy) {
+        memcpy(cmd.update_buffer.data_copy, pData, (size_t)dataSize);
     }
+    commandBuffer->recorded_commands.push_back(cmd);
 }
 
 void vkCmdPushDescriptorSetKHR(VkCommandBuffer commandBuffer,
@@ -327,6 +333,9 @@ void vkCmdCopyQueryPoolResults(VkCommandBuffer commandBuffer,
                                VkQueryResultFlags flags) {
 }
 
+static int s_dispatch_count = 0;
+static bool s_debug_dispatch = true;
+
 static void ApplyPushConstants(VkPipeline pipeline, const uint8_t* push_constants) {
     if (!pipeline || !pipeline->gl_program) return;
 
@@ -336,18 +345,38 @@ static void ApplyPushConstants(VkPipeline pipeline, const uint8_t* push_constant
             if (puni.type == 1) { // Float
                 if (puni.size == 4 && gl.ProgramUniform1f) {
                     gl.ProgramUniform1f(pipeline->gl_program, puni.location, *(const GLfloat*)val_ptr);
+                } else if (puni.size == 8) {
+                    // vec2 - use ProgramUniform2fv if available, else set components individually
+                    auto pfn = (void(*)(GLuint, GLint, GLsizei, const GLfloat*))eglGetProcAddress("glProgramUniform2fv");
+                    if (pfn) pfn(pipeline->gl_program, puni.location, 1, (const GLfloat*)val_ptr);
+                } else if (puni.size == 12) {
+                    // vec3
+                    auto pfn = (void(*)(GLuint, GLint, GLsizei, const GLfloat*))eglGetProcAddress("glProgramUniform3fv");
+                    if (pfn) pfn(pipeline->gl_program, puni.location, 1, (const GLfloat*)val_ptr);
                 } else if (puni.size == 16 && gl.ProgramUniform4fv) {
                     gl.ProgramUniform4fv(pipeline->gl_program, puni.location, 1, (const GLfloat*)val_ptr);
                 }
             } else if (puni.type == 2) { // UInt
                 if (puni.size == 4 && gl.ProgramUniform1ui) {
                     gl.ProgramUniform1ui(pipeline->gl_program, puni.location, *(const GLuint*)val_ptr);
+                } else if (puni.size == 8) {
+                    auto pfn = (void(*)(GLuint, GLint, GLsizei, const GLuint*))eglGetProcAddress("glProgramUniform2uiv");
+                    if (pfn) pfn(pipeline->gl_program, puni.location, 1, (const GLuint*)val_ptr);
+                } else if (puni.size == 12) {
+                    auto pfn = (void(*)(GLuint, GLint, GLsizei, const GLuint*))eglGetProcAddress("glProgramUniform3uiv");
+                    if (pfn) pfn(pipeline->gl_program, puni.location, 1, (const GLuint*)val_ptr);
                 } else if (puni.size == 16 && gl.ProgramUniform4uiv) {
                     gl.ProgramUniform4uiv(pipeline->gl_program, puni.location, 1, (const GLuint*)val_ptr);
                 }
             } else { // Int
                 if (puni.size == 4 && gl.ProgramUniform1i) {
                     gl.ProgramUniform1i(pipeline->gl_program, puni.location, *(const GLint*)val_ptr);
+                } else if (puni.size == 8) {
+                    auto pfn = (void(*)(GLuint, GLint, GLsizei, const GLint*))eglGetProcAddress("glProgramUniform2iv");
+                    if (pfn) pfn(pipeline->gl_program, puni.location, 1, (const GLint*)val_ptr);
+                } else if (puni.size == 12) {
+                    auto pfn = (void(*)(GLuint, GLint, GLsizei, const GLint*))eglGetProcAddress("glProgramUniform3iv");
+                    if (pfn) pfn(pipeline->gl_program, puni.location, 1, (const GLint*)val_ptr);
                 } else if (puni.size == 16 && gl.ProgramUniform4iv) {
                     gl.ProgramUniform4iv(pipeline->gl_program, puni.location, 1, (const GLint*)val_ptr);
                 }
@@ -379,30 +408,15 @@ VkResult vkQueueSubmit(VkQueue queue,
                             gl.UseProgram(current_pipeline->gl_program);
                             ApplyPushConstants(current_pipeline, current_push_constants);
                         }
-                        break;
-                    }
-                    case GLVKCmdType::BindDescriptorSets: {
-                        for (uint32_t i = 0; i < cmd.bind_descriptor_sets.descriptor_set_count; i++) {
-                            auto dset = cmd.bind_descriptor_sets.sets[i];
-                            if (!dset) continue;
-
-                            for (const auto& kv : dset->buffer_bindings) {
-                                uint32_t binding = kv.first;
-                                const auto& binfo = kv.second;
-                                if (binfo.gl_buffer != 0) {
-                                    gl.BindBufferRange(
-                                        GL_SHADER_STORAGE_BUFFER,
-                                        binding,
-                                        binfo.gl_buffer,
-                                        (GLintptr)binfo.offset,
-                                        (GLsizeiptr)binfo.range
-                                    );
-                                }
-                            }
+                        if (GetGLVKLogLevel() >= 3) {
+                            std::cout << "  [CMD BindPipeline] prog=" << (current_pipeline ? current_pipeline->gl_program : 0) << std::endl;
                         }
                         break;
                     }
                     case GLVKCmdType::PushConstants: {
+                        if (cmd.push_constants.offset == 0) {
+                            memset(current_push_constants, 0, sizeof(current_push_constants));
+                        }
                         if (cmd.push_constants.offset + cmd.push_constants.size <= 128) {
                             memcpy(current_push_constants + cmd.push_constants.offset,
                                    cmd.push_constants.data,
@@ -410,7 +424,37 @@ VkResult vkQueueSubmit(VkQueue queue,
                         }
 
                         if (current_pipeline && current_pipeline->gl_program) {
+                            gl.UseProgram(current_pipeline->gl_program);
                             ApplyPushConstants(current_pipeline, current_push_constants);
+                        }
+                        if (GetGLVKLogLevel() >= 3) {
+                            const int32_t* pi = (const int32_t*)cmd.push_constants.data;
+                            std::cout << "  [CMD PushConstants] off=" << cmd.push_constants.offset << " sz=" << cmd.push_constants.size
+                                      << " vals=" << pi[0] << " " << pi[1] << " " << pi[2] << " " << pi[3] << std::endl;
+                        }
+                        break;
+                    }
+                    case GLVKCmdType::BindDescriptorSets: {
+                        for (uint32_t i = 0; i < cmd.bind_descriptor_sets.descriptor_set_count; i++) {
+                            auto dset = cmd.bind_descriptor_sets.sets[i];
+                            if (!dset) continue;
+
+                            uint32_t set_index = cmd.bind_descriptor_sets.first_set + i;
+                            for (const auto& kv : dset->buffer_bindings) {
+                                uint32_t binding = kv.first;
+                                const auto& binfo = kv.second;
+                                if (binfo.gl_buffer != 0) {
+                                    // Flatten (set, binding) to match SPIRV-Cross remapped bindings
+                                    uint32_t gl_binding = set_index * 16 + binding;
+                                    gl.BindBufferRange(
+                                        GL_SHADER_STORAGE_BUFFER,
+                                        gl_binding,
+                                        binfo.gl_buffer,
+                                        (GLintptr)binfo.offset,
+                                        (GLsizeiptr)binfo.range
+                                    );
+                                }
+                            }
                         }
                         break;
                     }
@@ -441,27 +485,39 @@ VkResult vkQueueSubmit(VkQueue queue,
                     case GLVKCmdType::FillBuffer: {
                         auto dst = cmd.fill_buffer.dst_buffer;
                         if (dst && dst->memory) {
+                            // Use BufferSubData with a temp fill pattern instead of
+                            // MapBufferRange (which fails on persistent-storage buffers
+                            // when GL_MAP_PERSISTENT_BIT is not specified)
+                            size_t fill_size = (size_t)cmd.fill_buffer.size;
+                            size_t count = fill_size / sizeof(uint32_t);
+                            std::vector<uint32_t> fill_data(count, cmd.fill_buffer.data);
                             gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, dst->memory->gl_buffer);
-                            void* ptr = gl.MapBufferRange(
-                                GL_SHADER_STORAGE_BUFFER,
+                            gl.BufferSubData(GL_SHADER_STORAGE_BUFFER,
                                 (GLintptr)(dst->memory_offset + cmd.fill_buffer.dst_offset),
-                                (GLsizeiptr)cmd.fill_buffer.size,
-                                GL_MAP_WRITE_BIT
-                            );
-                            if (ptr) {
-                                uint32_t* uptr = (uint32_t*)ptr;
-                                size_t count = cmd.fill_buffer.size / sizeof(uint32_t);
-                                for (size_t k = 0; k < count; k++) {
-                                    uptr[k] = cmd.fill_buffer.data;
-                                }
-                                gl.UnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-                            }
+                                (GLsizeiptr)fill_size,
+                                fill_data.data());
                             gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+                        }
+                        break;
+                    }
+                    case GLVKCmdType::UpdateBuffer: {
+                        auto dst = cmd.update_buffer.dst_buffer;
+                        if (dst && dst->memory && cmd.update_buffer.data_copy) {
+                            gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, dst->memory->gl_buffer);
+                            gl.BufferSubData(GL_SHADER_STORAGE_BUFFER,
+                                (GLintptr)(dst->memory_offset + cmd.update_buffer.dst_offset),
+                                (GLsizeiptr)cmd.update_buffer.data_size,
+                                cmd.update_buffer.data_copy);
+                            gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+                            free(cmd.update_buffer.data_copy);
+                            // Note: we null out the pointer to avoid double-free if
+                            // commands are replayed (though they shouldn't be)
                         }
                         break;
                     }
                     case GLVKCmdType::Dispatch: {
                         if (current_pipeline && current_pipeline->gl_program) {
+                            gl.UseProgram(current_pipeline->gl_program);
                             ApplyPushConstants(current_pipeline, current_push_constants);
                         }
                         gl.DispatchCompute(
@@ -469,6 +525,19 @@ VkResult vkQueueSubmit(VkQueue queue,
                             cmd.dispatch.group_count_y,
                             cmd.dispatch.group_count_z
                         );
+
+                        s_dispatch_count++;
+                        if (GetGLVKLogLevel() >= 2 && current_pipeline) {
+                            std::cout << "[DISPATCH #" << s_dispatch_count << "] Groups: ("
+                                      << cmd.dispatch.group_count_x << ","
+                                      << cmd.dispatch.group_count_y << ","
+                                      << cmd.dispatch.group_count_z << ")"
+                                      << " prog=" << (current_pipeline ? current_pipeline->gl_program : 0)
+                                      << " push=";
+                            const int32_t* pi = (const int32_t*)current_push_constants;
+                            for (int k = 0; k < 6; k++) std::cout << pi[k] << " ";
+                            std::cout << std::endl;
+                        }
                         break;
                     }
                     case GLVKCmdType::DispatchIndirect: {
@@ -489,6 +558,9 @@ VkResult vkQueueSubmit(VkQueue queue,
 
     if (gl.MemoryBarrier) {
         gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
+    }
+    if (GetGLVKLogLevel() >= 1) {
+        std::cout << "[GLVK] QueueSubmit done, total dispatches so far: " << s_dispatch_count << std::endl;
     }
 
     if (fence != VK_NULL_HANDLE) {

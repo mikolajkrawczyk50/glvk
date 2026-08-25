@@ -10,11 +10,11 @@
 #include <layer.h>
 #include <layer_type.h>
 
-bool test_relu_layer(ncnn::VulkanDevice* vkdev) {
-    std::cout << "\n--- Testing Vulkan ReLU Layer ---" << std::endl;
+bool test_relu_layer(ncnn::VulkanDevice* vkdev, bool use_fp16) {
+    std::cout << "\n--- Testing Vulkan ReLU Layer (use_fp16=" << use_fp16 << ") ---" << std::endl;
     ncnn::Option opt;
     opt.use_vulkan_compute = 1;
-    opt.use_fp16_packed = 0;
+    opt.use_fp16_packed = use_fp16;
     opt.use_fp16_storage = 0;
     opt.use_fp16_arithmetic = 0;
     opt.blob_vkallocator = vkdev->acquire_blob_allocator();
@@ -56,7 +56,7 @@ bool test_relu_layer(ncnn::VulkanDevice* vkdev) {
 
         for (int i = 0; i < N; i++) {
             float expected = in[i] < 0.0f ? 0.0f : in[i];
-            if (std::abs(out[i] - expected) > 1e-4f) {
+            if (std::abs(out[i] - expected) > 1e-3f) {
                 std::cerr << "Mismatch at " << i << ": got " << out[i] << ", expected " << expected << std::endl;
                 pass = false;
             }
@@ -72,11 +72,11 @@ bool test_relu_layer(ncnn::VulkanDevice* vkdev) {
     return pass;
 }
 
-bool test_unaryop_layer(ncnn::VulkanDevice* vkdev) {
-    std::cout << "\n--- Testing Vulkan Sigmoid Layer (UnaryOp) ---" << std::endl;
+bool test_unaryop_layer(ncnn::VulkanDevice* vkdev, bool use_fp16) {
+    std::cout << "\n--- Testing Vulkan Sigmoid Layer (UnaryOp, use_fp16=" << use_fp16 << ") ---" << std::endl;
     ncnn::Option opt;
     opt.use_vulkan_compute = 1;
-    opt.use_fp16_packed = 0;
+    opt.use_fp16_packed = use_fp16;
     opt.use_fp16_storage = 0;
     opt.use_fp16_arithmetic = 0;
     opt.blob_vkallocator = vkdev->acquire_blob_allocator();
@@ -154,8 +154,10 @@ int main() {
     assert(vkdev != nullptr);
 
     bool all_passed = true;
-    all_passed &= test_relu_layer(vkdev);
-    all_passed &= test_unaryop_layer(vkdev);
+    all_passed &= test_relu_layer(vkdev, false);
+    all_passed &= test_unaryop_layer(vkdev, false);
+    all_passed &= test_relu_layer(vkdev, true);
+    all_passed &= test_unaryop_layer(vkdev, true);
 
     ncnn::destroy_gpu_instance();
 

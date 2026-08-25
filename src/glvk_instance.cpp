@@ -61,7 +61,7 @@ void vkGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
     pProperties->driverVersion = VK_MAKE_VERSION(1, 0, 0);
     pProperties->vendorID = physicalDevice->gpu_info.vendor_id;
     pProperties->deviceID = physicalDevice->gpu_info.device_id;
-    pProperties->deviceType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+    pProperties->deviceType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
 
     strncpy(pProperties->deviceName, physicalDevice->gpu_info.device_name.c_str(), sizeof(pProperties->deviceName) - 1);
 
@@ -174,7 +174,7 @@ void vkGetPhysicalDeviceFeatures(VkPhysicalDevice physicalDevice,
                                  VkPhysicalDeviceFeatures* pFeatures) {
     if (!pFeatures) return;
     memset(pFeatures, 0, sizeof(VkPhysicalDeviceFeatures));
-    pFeatures->shaderInt16 = VK_FALSE;
+    pFeatures->shaderInt16 = VK_TRUE;
     pFeatures->shaderInt64 = VK_TRUE;
     pFeatures->shaderFloat64 = VK_TRUE;
 }
@@ -354,7 +354,10 @@ static const VkExtensionProperties s_device_extensions[] = {
     { "VK_KHR_maintenance3", 1 },
     { "VK_KHR_bind_memory2", 1 },
     { "VK_KHR_get_memory_requirements2", 1 },
-    { "VK_KHR_storage_buffer_storage_class", 1 }
+    { "VK_KHR_storage_buffer_storage_class", 1 },
+    { "VK_KHR_16bit_storage", 1 },
+    { "VK_KHR_8bit_storage", 1 },
+    { "VK_KHR_shader_float16_int8", 1 }
 };
 
 VkResult vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice,

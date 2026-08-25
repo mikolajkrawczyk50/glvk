@@ -22,6 +22,13 @@ VkResult vkAllocateMemory(VkDevice device,
     if (gl.BufferStorage) {
         GLbitfield flags = GL_DYNAMIC_STORAGE_BIT | GL_MAP_READ_BIT | GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
         gl.BufferStorage(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)mem->size, nullptr, flags);
+        void* ptr = gl.MapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)mem->size, GL_MAP_READ_BIT | GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+        if (ptr) {
+            memset(ptr, 0, mem->size);
+            mem->mapped_ptr = ptr;
+            mem->mapped_offset = 0;
+            mem->mapped_size = mem->size;
+        }
     } else {
         gl.BufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)mem->size, nullptr, GL_DYNAMIC_DRAW);
     }

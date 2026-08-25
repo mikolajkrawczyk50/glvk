@@ -12,6 +12,7 @@ bool LoadGLFunctions() {
             std::cerr << "[GLVK] Failed to load gl" #name << std::endl; \
         }
 
+    LOAD_PROC(PFNGLGETERRORPROC, GetError);
     LOAD_PROC(PFNGLDISPATCHCOMPUTEPROC, DispatchCompute);
     LOAD_PROC(PFNGLDISPATCHCOMPUTEINDIRECTPROC, DispatchComputeIndirect);
     LOAD_PROC(PFNGLBINDBUFFERBASEPROC, BindBufferBase);
