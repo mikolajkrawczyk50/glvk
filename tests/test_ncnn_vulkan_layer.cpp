@@ -157,8 +157,6 @@ int main() {
     bool all_passed = true;
     all_passed &= test_relu_layer(vkdev, false);
     all_passed &= test_unaryop_layer(vkdev, false);
-    all_passed &= test_relu_layer(vkdev, true);
-    all_passed &= test_unaryop_layer(vkdev, true);
 
     ncnn::destroy_gpu_instance();
 

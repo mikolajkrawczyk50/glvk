@@ -155,9 +155,9 @@ void vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
     while (next) {
         if (next->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES) {
             auto* subgroup = (VkPhysicalDeviceSubgroupProperties*)next;
-            subgroup->subgroupSize = physicalDevice->gpu_info.subgroup_size;
-            subgroup->supportedStages = VK_SHADER_STAGE_COMPUTE_BIT;
-            subgroup->supportedOperations = VK_SUBGROUP_FEATURE_BASIC_BIT;
+            subgroup->subgroupSize = 0;
+            subgroup->supportedStages = 0;
+            subgroup->supportedOperations = 0;
             subgroup->quadOperationsInAllStages = VK_FALSE;
         } else if (next->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES_KHR) {
             auto* driver = (VkPhysicalDeviceDriverPropertiesKHR*)next;
@@ -360,10 +360,7 @@ static const VkExtensionProperties s_device_extensions[] = {
     { "VK_KHR_maintenance3", 1 },
     { "VK_KHR_bind_memory2", 1 },
     { "VK_KHR_get_memory_requirements2", 1 },
-    { "VK_KHR_storage_buffer_storage_class", 1 },
-    { "VK_KHR_16bit_storage", 1 },
-    { "VK_KHR_8bit_storage", 1 },
-    { "VK_KHR_shader_float16_int8", 1 }
+    { "VK_KHR_storage_buffer_storage_class", 1 }
 };
 
 VkResult vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice,
