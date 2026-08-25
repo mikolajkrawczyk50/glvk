@@ -122,6 +122,7 @@ typedef void (APIENTRYP PFNGLDELETEBUFFERSPROC)(GLsizei n, const GLuint *buffers
 typedef void (APIENTRYP PFNGLBINDBUFFERPROC)(GLenum target, GLuint buffer);
 typedef void (APIENTRYP PFNGLBUFFERDATAPROC)(GLenum target, GLsizeiptr size, const void *data, GLenum usage);
 typedef void (APIENTRYP PFNGLBUFFERSUBDATAPROC)(GLenum target, GLintptr offset, GLsizeiptr size, const void *data);
+typedef void (APIENTRYP PFNGLGETBUFFERSUBDATAPROC)(GLenum target, GLintptr offset, GLsizeiptr size, void *data);
 typedef void (APIENTRYP PFNGLCOPYBUFFERSUBDATAPROC)(GLenum readTarget, GLenum writeTarget, GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size);
 typedef void* (APIENTRYP PFNGLMAPBUFFERRANGEPROC)(GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access);
 typedef GLboolean (APIENTRYP PFNGLUNMAPBUFFERPROC)(GLenum target);
@@ -153,8 +154,14 @@ typedef GLint (APIENTRYP PFNGLGETUNIFORMLOCATIONPROC)(GLuint program, const GLch
 typedef void (APIENTRYP PFNGLPROGRAMUNIFORM1IPROC)(GLuint program, GLint location, GLint v0);
 typedef void (APIENTRYP PFNGLPROGRAMUNIFORM1UIPROC)(GLuint program, GLint location, GLuint v0);
 typedef void (APIENTRYP PFNGLPROGRAMUNIFORM1FPROC)(GLuint program, GLint location, GLfloat v0);
+typedef void (APIENTRYP PFNGLPROGRAMUNIFORM2FVPROC)(GLuint program, GLint location, GLsizei count, const GLfloat *value);
+typedef void (APIENTRYP PFNGLPROGRAMUNIFORM3FVPROC)(GLuint program, GLint location, GLsizei count, const GLfloat *value);
 typedef void (APIENTRYP PFNGLPROGRAMUNIFORM4FVPROC)(GLuint program, GLint location, GLsizei count, const GLfloat *value);
+typedef void (APIENTRYP PFNGLPROGRAMUNIFORM2IVPROC)(GLuint program, GLint location, GLsizei count, const GLint *value);
+typedef void (APIENTRYP PFNGLPROGRAMUNIFORM3IVPROC)(GLuint program, GLint location, GLsizei count, const GLint *value);
 typedef void (APIENTRYP PFNGLPROGRAMUNIFORM4IVPROC)(GLuint program, GLint location, GLsizei count, const GLint *value);
+typedef void (APIENTRYP PFNGLPROGRAMUNIFORM2UIVPROC)(GLuint program, GLint location, GLsizei count, const GLuint *value);
+typedef void (APIENTRYP PFNGLPROGRAMUNIFORM3UIVPROC)(GLuint program, GLint location, GLsizei count, const GLuint *value);
 typedef void (APIENTRYP PFNGLPROGRAMUNIFORM4UIVPROC)(GLuint program, GLint location, GLsizei count, const GLuint *value);
 
 typedef GLenum (APIENTRYP PFNGLGETERRORPROC)(void);
@@ -174,6 +181,7 @@ struct GLFunctions {
     PFNGLBINDBUFFERPROC BindBuffer = nullptr;
     PFNGLBUFFERDATAPROC BufferData = nullptr;
     PFNGLBUFFERSUBDATAPROC BufferSubData = nullptr;
+    PFNGLGETBUFFERSUBDATAPROC GetBufferSubData = nullptr;
     PFNGLCOPYBUFFERSUBDATAPROC CopyBufferSubData = nullptr;
     PFNGLMAPBUFFERRANGEPROC MapBufferRange = nullptr;
     PFNGLUNMAPBUFFERPROC UnmapBuffer = nullptr;
@@ -205,8 +213,14 @@ struct GLFunctions {
     PFNGLPROGRAMUNIFORM1IPROC ProgramUniform1i = nullptr;
     PFNGLPROGRAMUNIFORM1UIPROC ProgramUniform1ui = nullptr;
     PFNGLPROGRAMUNIFORM1FPROC ProgramUniform1f = nullptr;
+    PFNGLPROGRAMUNIFORM2FVPROC ProgramUniform2fv = nullptr;
+    PFNGLPROGRAMUNIFORM3FVPROC ProgramUniform3fv = nullptr;
     PFNGLPROGRAMUNIFORM4FVPROC ProgramUniform4fv = nullptr;
+    PFNGLPROGRAMUNIFORM2IVPROC ProgramUniform2iv = nullptr;
+    PFNGLPROGRAMUNIFORM3IVPROC ProgramUniform3iv = nullptr;
     PFNGLPROGRAMUNIFORM4IVPROC ProgramUniform4iv = nullptr;
+    PFNGLPROGRAMUNIFORM2UIVPROC ProgramUniform2uiv = nullptr;
+    PFNGLPROGRAMUNIFORM3UIVPROC ProgramUniform3uiv = nullptr;
     PFNGLPROGRAMUNIFORM4UIVPROC ProgramUniform4uiv = nullptr;
 
     PFNGLGETINTEGERI_VPROC GetIntegeri_v = nullptr;

@@ -39,13 +39,11 @@ void vkGetDeviceQueue(VkDevice device,
 }
 
 VkResult vkDeviceWaitIdle(VkDevice device) {
-    if (gl.ClientWaitSync) {
-        // Issue memory barrier and glFinish
-        if (gl.MemoryBarrier) {
-            gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
-        }
-        glFinish();
+    GLVKContextScope scope;
+    if (gl.MemoryBarrier) {
+        gl.MemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
     }
+    glFinish();
     return VK_SUCCESS;
 }
 

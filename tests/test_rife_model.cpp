@@ -89,8 +89,8 @@ int main() {
         net.opt.use_fp16_arithmetic = false;
         net.set_vulkan_device(vkdev);
 
-        std::string param_path = "/home/user/repos/glvk/rife-ncnn-vulkan-20221029-ubuntu/rife-v4/flownet.param";
-        std::string bin_path = "/home/user/repos/glvk/rife-ncnn-vulkan-20221029-ubuntu/rife-v4/flownet.bin";
+        std::string param_path = "/home/user/repos/rife-ncnn-vulkan/models/rife-v4.6/flownet.param";
+        std::string bin_path = "/home/user/repos/rife-ncnn-vulkan/models/rife-v4.6/flownet.bin";
 
         std::cout << "[TEST] Loading " << param_path << "..." << std::endl;
         if (net.load_param(param_path.c_str()) != 0) {

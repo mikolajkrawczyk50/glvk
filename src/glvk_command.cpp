@@ -113,10 +113,29 @@ void vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer,
 
     GLVKCmd cmd;
     cmd.type = GLVKCmdType::BindDescriptorSets;
-    cmd.bind_descriptor_sets.first_set = firstSet;
-    cmd.bind_descriptor_sets.descriptor_set_count = std::min(descriptorSetCount, 8u);
-    for (uint32_t i = 0; i < cmd.bind_descriptor_sets.descriptor_set_count; i++) {
-        cmd.bind_descriptor_sets.sets[i] = pDescriptorSets[i];
+    cmd.bind_descriptor_sets.binding_count = 0;
+
+    for (uint32_t i = 0; i < descriptorSetCount; i++) {
+        auto dset = pDescriptorSets[i];
+        if (!dset) continue;
+
+        uint32_t set_index = firstSet + i;
+        for (const auto& kv : dset->buffer_bindings) {
+            uint32_t b_idx = kv.first;
+            const auto& binfo = kv.second;
+            if (binfo.gl_buffer != 0 && cmd.bind_descriptor_sets.binding_count < 16) {
+                auto& bb = cmd.bind_descriptor_sets.bindings[cmd.bind_descriptor_sets.binding_count++];
+                bb.gl_buffer = binfo.gl_buffer;
+                bb.gl_binding = set_index * 4 + b_idx;
+                bb.offset = binfo.offset;
+                bb.range = binfo.range;
+                bb.bank_count = (uint32_t)std::min<size_t>(binfo.bank_buffers.size(), 4);
+                for (uint32_t b = 0; b < bb.bank_count; b++) {
+                    bb.bank_buffers[b] = binfo.bank_buffers[b];
+                    bb.bank_sizes[b] = binfo.bank_sizes[b];
+                }
+            }
+        }
     }
     commandBuffer->recorded_commands.push_back(cmd);
 }
@@ -345,38 +364,30 @@ static void ApplyPushConstants(VkPipeline pipeline, const uint8_t* push_constant
             if (puni.type == 1) { // Float
                 if (puni.size == 4 && gl.ProgramUniform1f) {
                     gl.ProgramUniform1f(pipeline->gl_program, puni.location, *(const GLfloat*)val_ptr);
-                } else if (puni.size == 8) {
-                    // vec2 - use ProgramUniform2fv if available, else set components individually
-                    auto pfn = (void(*)(GLuint, GLint, GLsizei, const GLfloat*))eglGetProcAddress("glProgramUniform2fv");
-                    if (pfn) pfn(pipeline->gl_program, puni.location, 1, (const GLfloat*)val_ptr);
-                } else if (puni.size == 12) {
-                    // vec3
-                    auto pfn = (void(*)(GLuint, GLint, GLsizei, const GLfloat*))eglGetProcAddress("glProgramUniform3fv");
-                    if (pfn) pfn(pipeline->gl_program, puni.location, 1, (const GLfloat*)val_ptr);
+                } else if (puni.size == 8 && gl.ProgramUniform2fv) {
+                    gl.ProgramUniform2fv(pipeline->gl_program, puni.location, 1, (const GLfloat*)val_ptr);
+                } else if (puni.size == 12 && gl.ProgramUniform3fv) {
+                    gl.ProgramUniform3fv(pipeline->gl_program, puni.location, 1, (const GLfloat*)val_ptr);
                 } else if (puni.size == 16 && gl.ProgramUniform4fv) {
                     gl.ProgramUniform4fv(pipeline->gl_program, puni.location, 1, (const GLfloat*)val_ptr);
                 }
             } else if (puni.type == 2) { // UInt
                 if (puni.size == 4 && gl.ProgramUniform1ui) {
                     gl.ProgramUniform1ui(pipeline->gl_program, puni.location, *(const GLuint*)val_ptr);
-                } else if (puni.size == 8) {
-                    auto pfn = (void(*)(GLuint, GLint, GLsizei, const GLuint*))eglGetProcAddress("glProgramUniform2uiv");
-                    if (pfn) pfn(pipeline->gl_program, puni.location, 1, (const GLuint*)val_ptr);
-                } else if (puni.size == 12) {
-                    auto pfn = (void(*)(GLuint, GLint, GLsizei, const GLuint*))eglGetProcAddress("glProgramUniform3uiv");
-                    if (pfn) pfn(pipeline->gl_program, puni.location, 1, (const GLuint*)val_ptr);
+                } else if (puni.size == 8 && gl.ProgramUniform2uiv) {
+                    gl.ProgramUniform2uiv(pipeline->gl_program, puni.location, 1, (const GLuint*)val_ptr);
+                } else if (puni.size == 12 && gl.ProgramUniform3uiv) {
+                    gl.ProgramUniform3uiv(pipeline->gl_program, puni.location, 1, (const GLuint*)val_ptr);
                 } else if (puni.size == 16 && gl.ProgramUniform4uiv) {
                     gl.ProgramUniform4uiv(pipeline->gl_program, puni.location, 1, (const GLuint*)val_ptr);
                 }
             } else { // Int
                 if (puni.size == 4 && gl.ProgramUniform1i) {
                     gl.ProgramUniform1i(pipeline->gl_program, puni.location, *(const GLint*)val_ptr);
-                } else if (puni.size == 8) {
-                    auto pfn = (void(*)(GLuint, GLint, GLsizei, const GLint*))eglGetProcAddress("glProgramUniform2iv");
-                    if (pfn) pfn(pipeline->gl_program, puni.location, 1, (const GLint*)val_ptr);
-                } else if (puni.size == 12) {
-                    auto pfn = (void(*)(GLuint, GLint, GLsizei, const GLint*))eglGetProcAddress("glProgramUniform3iv");
-                    if (pfn) pfn(pipeline->gl_program, puni.location, 1, (const GLint*)val_ptr);
+                } else if (puni.size == 8 && gl.ProgramUniform2iv) {
+                    gl.ProgramUniform2iv(pipeline->gl_program, puni.location, 1, (const GLint*)val_ptr);
+                } else if (puni.size == 12 && gl.ProgramUniform3iv) {
+                    gl.ProgramUniform3iv(pipeline->gl_program, puni.location, 1, (const GLint*)val_ptr);
                 } else if (puni.size == 16 && gl.ProgramUniform4iv) {
                     gl.ProgramUniform4iv(pipeline->gl_program, puni.location, 1, (const GLint*)val_ptr);
                 }
@@ -390,6 +401,10 @@ VkResult vkQueueSubmit(VkQueue queue,
                        const VkSubmitInfo* pSubmits,
                        VkFence fence) {
     GLVKContextScope scope;
+
+    for (GLuint i = 0; i < 32; i++) {
+        gl.BindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
+    }
 
     VkPipeline current_pipeline = VK_NULL_HANDLE;
     uint8_t current_push_constants[128] = {0};
@@ -435,24 +450,31 @@ VkResult vkQueueSubmit(VkQueue queue,
                         break;
                     }
                     case GLVKCmdType::BindDescriptorSets: {
-                        for (uint32_t i = 0; i < cmd.bind_descriptor_sets.descriptor_set_count; i++) {
-                            auto dset = cmd.bind_descriptor_sets.sets[i];
-                            if (!dset) continue;
-
-                            uint32_t set_index = cmd.bind_descriptor_sets.first_set + i;
-                            for (const auto& kv : dset->buffer_bindings) {
-                                uint32_t binding = kv.first;
-                                const auto& binfo = kv.second;
-                                if (binfo.gl_buffer != 0) {
-                                    // Flatten (set, binding) to match SPIRV-Cross remapped bindings
-                                    uint32_t gl_binding = set_index * 16 + binding;
-                                    gl.BindBufferRange(
-                                        GL_SHADER_STORAGE_BUFFER,
-                                        gl_binding,
-                                        binfo.gl_buffer,
-                                        (GLintptr)binfo.offset,
-                                        (GLsizeiptr)binfo.range
-                                    );
+                        for (uint32_t i = 0; i < cmd.bind_descriptor_sets.binding_count; i++) {
+                            const auto& bb = cmd.bind_descriptor_sets.bindings[i];
+                            if (bb.gl_buffer != 0) {
+                                if (bb.bank_count > 1) {
+                                    for (uint32_t b = 0; b < bb.bank_count; b++) {
+                                        gl.BindBufferRange(
+                                            GL_SHADER_STORAGE_BUFFER,
+                                            bb.gl_binding + (uint32_t)b * 16,
+                                            bb.bank_buffers[b],
+                                            0,
+                                            (GLsizeiptr)bb.bank_sizes[b]
+                                        );
+                                    }
+                                } else {
+                                    if (bb.offset == 0 && (bb.range == VK_WHOLE_SIZE || bb.range == 0)) {
+                                        gl.BindBufferBase(GL_SHADER_STORAGE_BUFFER, bb.gl_binding, bb.gl_buffer);
+                                    } else {
+                                        gl.BindBufferRange(
+                                            GL_SHADER_STORAGE_BUFFER,
+                                            bb.gl_binding,
+                                            bb.gl_buffer,
+                                            (GLintptr)bb.offset,
+                                            (GLsizeiptr)bb.range
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -460,7 +482,7 @@ VkResult vkQueueSubmit(VkQueue queue,
                     }
                     case GLVKCmdType::PipelineBarrier: {
                         if (gl.MemoryBarrier) {
-                            gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
+                            gl.MemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
                         }
                         break;
                     }
@@ -520,13 +542,20 @@ VkResult vkQueueSubmit(VkQueue queue,
                             gl.UseProgram(current_pipeline->gl_program);
                             ApplyPushConstants(current_pipeline, current_push_constants);
                         }
-                        gl.DispatchCompute(
-                            cmd.dispatch.group_count_x,
-                            cmd.dispatch.group_count_y,
-                            cmd.dispatch.group_count_z
-                        );
+                        if (cmd.dispatch.group_count_x > 0 &&
+                            cmd.dispatch.group_count_y > 0 &&
+                            cmd.dispatch.group_count_z > 0) {
+                            gl.DispatchCompute(
+                                cmd.dispatch.group_count_x,
+                                cmd.dispatch.group_count_y,
+                                cmd.dispatch.group_count_z
+                            );
+                        }
 
                         s_dispatch_count++;
+                        if ((s_dispatch_count % 8) == 0) {
+                            glFlush();
+                        }
                         if (GetGLVKLogLevel() >= 2 && current_pipeline) {
                             std::cout << "[DISPATCH #" << s_dispatch_count << "] Groups: ("
                                       << cmd.dispatch.group_count_x << ","
@@ -557,8 +586,14 @@ VkResult vkQueueSubmit(VkQueue queue,
     }
 
     if (gl.MemoryBarrier) {
-        gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
+        gl.MemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT | GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
     }
+
+    // Unbind all indexed SSBO slots to prevent dangling driver references
+    for (GLuint i = 0; i < 32; i++) {
+        gl.BindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
+    }
+
     if (GetGLVKLogLevel() >= 1) {
         std::cout << "[GLVK] QueueSubmit done, total dispatches so far: " << s_dispatch_count << std::endl;
     }
@@ -568,11 +603,11 @@ VkResult vkQueueSubmit(VkQueue queue,
             gl.DeleteSync(fence->sync);
             fence->sync = nullptr;
         }
-        if (gl.FenceSync) {
-            fence->sync = gl.FenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-        }
         fence->signaled = false;
     }
+
+    // Critical for Fermi GF108 and legacy drivers: flush buffered commands to hardware
+    glFlush();
 
     return VK_SUCCESS;
 }
@@ -580,7 +615,7 @@ VkResult vkQueueSubmit(VkQueue queue,
 VkResult vkQueueWaitIdle(VkQueue queue) {
     GLVKContextScope scope;
     if (gl.MemoryBarrier) {
-        gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
+        gl.MemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
     }
     glFinish();
     return VK_SUCCESS;

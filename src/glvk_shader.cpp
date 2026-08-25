@@ -51,57 +51,13 @@ static void PatchGLSLSource(std::string& src) {
 
 
 
-    if (src.find("float16_t bottom_blob_data[];") != std::string::npos) {
-        replace_all(src, "float16_t bottom_blob_data[];", "float bottom_blob_data[];");
-    }
-    if (src.find("float16_t top_blob_data[];") != std::string::npos) {
-        replace_all(src, "float16_t top_blob_data[];", "float top_blob_data[];");
-    }
 
 
-    // Fix Warp bilinear weights
-    replace_all(src, "float alpha = sample_x - float(x0);", "float alpha = sample_x - floor(sample_x);");
-    replace_all(src, "float beta = sample_y - float(y0);", "float beta = sample_y - floor(sample_y);");
 
-    if (src.find("int acstep;") != std::string::npos && src.find("int bcstep;") != std::string::npos) {
-        if (src.find("int ai") == std::string::npos && src.find("int bi") == std::string::npos) {
-            size_t gi_pos = src.find("int gi = ");
-            if (gi_pos != std::string::npos) {
-                size_t semi = src.find(';', gi_pos);
-                if (semi != std::string::npos) {
-                    std::string idx_calc =
-                        "\n    int ca = (p.ac > 0) ? (gz % p.ac) : 0;\n"
-                        "    int cb = (p.bc > 0) ? (gz % p.bc) : 0;\n"
-                        "    int ai = (p.adims == 0 || (p.aw == p.outw && p.ah == p.outh && p.ac == p.outc)) ? gi : ((p.aw == 1 && p.ah == 1 && p.ac == 1) ? 0 : (ca * p.acstep + ((p.ah == 1) ? 0 : gy) * p.aw + ((p.aw == 1) ? 0 : gx)));\n"
-                        "    int bi = (p.bdims == 0 || (p.bw == p.outw && p.bh == p.outh && p.bc == p.outc)) ? gi : ((p.bw == 1 && p.bh == 1 && p.bc == 1) ? 0 : (cb * p.bcstep + ((p.bh == 1) ? 0 : gy) * p.bw + ((p.bw == 1) ? 0 : gx)));\n";
-                    src.insert(semi + 1, idx_calc);
-                    replace_all(src, "a_blob_data[gi / 2])[gi % 2]", "a_blob_data[ai / 2])[ai % 2]");
-                    replace_all(src, "b_blob_data[gi / 2])[gi % 2]", "b_blob_data[bi / 2])[bi % 2]");
-                    replace_all(src, "a_blob_data[gi / 2]", "a_blob_data[ai / 2]");
-                    replace_all(src, "b_blob_data[gi / 2]", "b_blob_data[bi / 2]");
-                    replace_all(src, "a_blob_data[gi]", "a_blob_data[ai]");
-                    replace_all(src, "b_blob_data[gi]", "b_blob_data[bi]");
-                }
-            }
-        }
-    }
 
-    // Fix zero-dimension early returns on 2D / 1D tensors (e.g. outc == 0)
-    {
-        std::regex re_gz("gz\\s*>=\\s*([a-zA-Z0-9_]+);");
-        src = std::regex_replace(src, re_gz, "gz >= max(1, $1);");
-        std::regex re_gy("gy\\s*>=\\s*([a-zA-Z0-9_]+);");
-        src = std::regex_replace(src, re_gy, "gy >= max(1, $1);");
-        std::regex re_gx("gx\\s*>=\\s*([a-zA-Z0-9_]+);");
-        src = std::regex_replace(src, re_gx, "gx >= max(1, $1);");
 
-        std::regex re_p_gz("gz\\s*>=\\s*(p\\.[a-zA-Z0-9_]+)");
-        src = std::regex_replace(src, re_p_gz, "gz >= max(1, $1)");
-        std::regex re_p_gy("gy\\s*>=\\s*(p\\.[a-zA-Z0-9_]+)");
-        src = std::regex_replace(src, re_p_gy, "gy >= max(1, $1)");
-        std::regex re_p_gx("gx\\s*>=\\s*(p\\.[a-zA-Z0-9_]+)");
-        src = std::regex_replace(src, re_p_gx, "gx >= max(1, $1)");
-    }
+
+
 
     find_subdword_buffers("uint8_t", u8_vars);
     find_subdword_buffers("int8_t", i8_vars);
@@ -124,6 +80,7 @@ static void PatchGLSLSource(std::string& src) {
     replace_all(src, "#error No extension available for FP16.", "// FP16 mapped to float");
     replace_all(src, "#error No extension available for Int8.", "// Int8 mapped to uint");
     replace_all(src, "#error No extension available for Int16.", "// Int16 mapped to int");
+    replace_all(src, ": require", ": enable");
 
     // Insert type-widening macros and sub-dword helper macros after #version line
     std::string type_defs =
@@ -156,7 +113,35 @@ static void PatchGLSLSource(std::string& src) {
     std::string helpers;
     if (needs_subdword) {
         helpers =
-            "\n// GLVK sub-dword emulated packing/unpacking helpers\n"
+            "\n// GLVK sub-dword emulated packing/unpacking helpers (pure IEEE-754 bitwise)\n"
+            "float glvk_half_to_float(uint h) {\n"
+            "    uint sign = (h & 0x8000u) << 16;\n"
+            "    uint exp = (h & 0x7C00u) >> 10;\n"
+            "    uint mant = (h & 0x03FFu);\n"
+            "    if (exp == 0u) {\n"
+            "        if (mant == 0u) return uintBitsToFloat(sign);\n"
+            "        while ((mant & 0x0400u) == 0u) { mant <<= 1; exp--; }\n"
+            "        exp++; mant &= 0x03FFu;\n"
+            "        return uintBitsToFloat(sign | ((exp + 112u) << 23) | (mant << 13));\n"
+            "    } else if (exp == 31u) {\n"
+            "        return uintBitsToFloat(sign | 0x7F800000u | (mant << 13));\n"
+            "    }\n"
+            "    return uintBitsToFloat(sign | ((exp + 112u) << 23) | (mant << 13));\n"
+            "}\n\n"
+            "uint glvk_float_to_half(float f) {\n"
+            "    uint u = floatBitsToUint(f);\n"
+            "    uint sign = (u >> 16) & 0x8000u;\n"
+            "    int exp = int((u >> 23) & 0xFFu) - 127 + 15;\n"
+            "    uint mant = u & 0x007FFFFFu;\n"
+            "    if (exp <= 0) {\n"
+            "        if (exp < -10) return sign;\n"
+            "        mant = (mant | 0x00800000u) >> (1 - exp);\n"
+            "        return sign | ((mant + 0x00001000u) >> 13);\n"
+            "    } else if (exp >= 31) {\n"
+            "        return sign | 0x7C00u;\n"
+            "    }\n"
+            "    return sign | (uint(exp) << 10) | ((mant + 0x00001000u) >> 13);\n"
+            "}\n\n"
             "#define glvk_write_u8(buf, idx, val) do { \\\n"
             "    int _w = int(idx) >> 2; \\\n"
             "    int _shift = (int(idx) & 3) * 8; \\\n"
@@ -170,13 +155,13 @@ static void PatchGLSLSource(std::string& src) {
             "    int _w = int(idx) >> 1; \\\n"
             "    int _shift = (int(idx) & 1) * 16; \\\n"
             "    atomicAnd(buf[_w], ~(0xFFFFu << _shift)); \\\n"
-            "    atomicOr(buf[_w], (packHalf2x16(vec2(float(val), 0.0)) & 0xFFFFu) << _shift); \\\n"
+            "    atomicOr(buf[_w], (glvk_float_to_half(float(val)) & 0xFFFFu) << _shift); \\\n"
             "} while(false)\n\n"
-            "#define glvk_read_f16(buf, idx) (((int(idx) & 1) == 0) ? unpackHalf2x16(buf[int(idx) >> 1]).x : unpackHalf2x16(buf[int(idx) >> 1]).y)\n\n"
-            "#define glvk_write_f16vec2(buf, idx, val) (buf[int(idx)] = packHalf2x16(vec2(val)))\n"
-            "#define glvk_read_f16vec2(buf, idx) unpackHalf2x16(buf[int(idx)])\n\n"
-            "#define glvk_write_f16vec4(buf, idx, val) (buf[int(idx)] = uvec2(packHalf2x16(vec2((val).xy)), packHalf2x16(vec2((val).zw))))\n"
-            "#define glvk_read_f16vec4(buf, idx) vec4(unpackHalf2x16(buf[int(idx)].x), unpackHalf2x16(buf[int(idx)].y))\n\n";
+            "#define glvk_read_f16(buf, idx) (glvk_half_to_float((buf[int(idx) >> 1] >> (((int(idx) & 1)) * 16)) & 0xFFFFu))\n\n"
+            "#define glvk_write_f16vec2(buf, idx, val) (buf[int(idx)] = (glvk_float_to_half((val).x) & 0xFFFFu) | (glvk_float_to_half((val).y) << 16))\n"
+            "#define glvk_read_f16vec2(buf, idx) vec2(glvk_half_to_float(buf[int(idx)] & 0xFFFFu), glvk_half_to_float(buf[int(idx)] >> 16))\n\n"
+            "#define glvk_write_f16vec4(buf, idx, val) (buf[int(idx)] = uvec2((glvk_float_to_half((val).x) & 0xFFFFu) | (glvk_float_to_half((val).y) << 16), (glvk_float_to_half((val).z) & 0xFFFFu) | (glvk_float_to_half((val).w) << 16)))\n"
+            "#define glvk_read_f16vec4(buf, idx) vec4(glvk_half_to_float(buf[int(idx)].x & 0xFFFFu), glvk_half_to_float(buf[int(idx)].x >> 16), glvk_half_to_float(buf[int(idx)].y & 0xFFFFu), glvk_half_to_float(buf[int(idx)].y >> 16))\n\n";
     }
 
     size_t version_pos = src.find("#version 430");
@@ -343,16 +328,18 @@ GLuint CompileSPIRVToGLProgram(
         options.enable_storage_image_qualifier_deduction = false;
         glsl.set_common_options(options);
 
+        std::cerr << "[GLVK] Starting SPIR-V to GLSL compile..." << std::endl;
+
         // Remap (set, binding) pairs to a flat binding namespace for OpenGL.
-        // SPIRV-Cross strips the set decoration when vulkan_semantics=false,
-        // causing set 0 binding 0 and set 1 binding 0 to collide at GL binding 0.
-        // Fix: new_binding = set * 16 + binding
+        // On Fermi GF108 / GT 730, GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS is limited (8 to 16).
+        // Using set * 4 + binding keeps set 0 (0..3), set 1 (4..7), set 2 (8..11), set 3 (12..15)
+        // safely within hardware limits without overflowing SSBO binding tables.
         {
             auto remap_resources = [&](const auto& resources) {
                 for (const auto& res : resources) {
                     uint32_t set = glsl.get_decoration(res.id, spv::DecorationDescriptorSet);
                     uint32_t binding = glsl.get_decoration(res.id, spv::DecorationBinding);
-                    uint32_t new_binding = set * 16 + binding;
+                    uint32_t new_binding = set * 4 + binding;
                     glsl.set_decoration(res.id, spv::DecorationBinding, new_binding);
                 }
             };

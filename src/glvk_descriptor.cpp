@@ -121,7 +121,11 @@ void vkUpdateDescriptorSets(VkDevice device,
                     if (range == VK_WHOLE_SIZE) {
                         range = bufInfo.buffer->size - bufInfo.offset;
                     }
-                    set->buffer_bindings[write.dstBinding + j] = { gl_buf, final_offset, range };
+                    set->buffer_bindings[write.dstBinding + j] = {
+                        gl_buf, final_offset, range, 0,
+                        bufInfo.buffer->memory->gl_buffers,
+                        bufInfo.buffer->memory->bank_sizes
+                    };
                 }
             }
         }

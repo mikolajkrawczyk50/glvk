@@ -81,6 +81,8 @@ int main() {
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(phys_device, &props);
     std::cout << "[TEST] Device Name: " << props.deviceName << std::endl;
+    std::cout << "[TEST] maxStorageBufferRange: " << props.limits.maxStorageBufferRange / (1024 * 1024) << " MB" << std::endl;
+    std::cout << "[TEST] maxPerStageDescriptorStorageBuffers: " << props.limits.maxPerStageDescriptorStorageBuffers << std::endl;
 
     float queue_priority = 1.0f;
     VkDeviceQueueCreateInfo queue_info = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };

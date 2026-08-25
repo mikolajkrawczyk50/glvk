@@ -155,13 +155,19 @@ void vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
     while (next) {
         if (next->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES) {
             auto* subgroup = (VkPhysicalDeviceSubgroupProperties*)next;
-            subgroup->subgroupSize = 64;
+            subgroup->subgroupSize = physicalDevice->gpu_info.subgroup_size;
             subgroup->supportedStages = VK_SHADER_STAGE_COMPUTE_BIT;
             subgroup->supportedOperations = VK_SUBGROUP_FEATURE_BASIC_BIT;
             subgroup->quadOperationsInAllStages = VK_FALSE;
         } else if (next->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES_KHR) {
             auto* driver = (VkPhysicalDeviceDriverPropertiesKHR*)next;
-            driver->driverID = VK_DRIVER_ID_MESA_RADV;
+            if (physicalDevice->gpu_info.vendor_id == 0x10DE) {
+                driver->driverID = VK_DRIVER_ID_NVIDIA_PROPRIETARY;
+            } else if (physicalDevice->gpu_info.vendor_id == 0x1002) {
+                driver->driverID = VK_DRIVER_ID_MESA_RADV;
+            } else {
+                driver->driverID = VK_DRIVER_ID_MESA_LLVMPIPE;
+            }
             strncpy(driver->driverName, "GLVK", sizeof(driver->driverName) - 1);
             strncpy(driver->driverInfo, "GLVK OpenGL Compute Shim", sizeof(driver->driverInfo) - 1);
             driver->conformanceVersion = { 1, 2, 0, 0 };

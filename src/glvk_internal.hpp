@@ -63,6 +63,11 @@ struct VkDeviceMemory_T {
     void* mapped_ptr = nullptr;
     VkDeviceSize mapped_offset = 0;
     VkDeviceSize mapped_size = 0;
+
+    // Multi-bank support for buffers > 128 MB
+    std::vector<GLuint> gl_buffers;
+    std::vector<VkDeviceSize> bank_sizes;
+    void* shadow_ptr = nullptr;
 };
 
 struct VkBuffer_T {
@@ -100,6 +105,8 @@ struct GLVKBufferBindingInfo {
     VkDeviceSize offset = 0;
     VkDeviceSize range = 0;
     uint32_t set_index = 0; // Vulkan descriptor set index for flat binding calculation
+    std::vector<GLuint> bank_buffers;
+    std::vector<VkDeviceSize> bank_sizes;
 };
 
 struct VkDescriptorSetLayout_T {
@@ -125,6 +132,16 @@ struct VkSemaphore_T {
     bool signaled = false;
 };
 
+struct GLVKBoundBuffer {
+    GLuint gl_buffer;
+    uint32_t gl_binding;
+    VkDeviceSize offset;
+    VkDeviceSize range;
+    uint32_t bank_count;
+    GLuint bank_buffers[4];
+    VkDeviceSize bank_sizes[4];
+};
+
 enum class GLVKCmdType {
     BindPipeline,
     BindDescriptorSets,
@@ -145,9 +162,8 @@ struct GLVKCmd {
         } bind_pipeline;
 
         struct {
-            uint32_t first_set;
-            uint32_t descriptor_set_count;
-            VkDescriptorSet sets[8];
+            uint32_t binding_count;
+            GLVKBoundBuffer bindings[16];
         } bind_descriptor_sets;
 
         struct {

@@ -25,6 +25,7 @@ bool LoadGLFunctions() {
     LOAD_PROC(PFNGLBINDBUFFERPROC, BindBuffer);
     LOAD_PROC(PFNGLBUFFERDATAPROC, BufferData);
     LOAD_PROC(PFNGLBUFFERSUBDATAPROC, BufferSubData);
+    LOAD_PROC(PFNGLGETBUFFERSUBDATAPROC, GetBufferSubData);
     LOAD_PROC(PFNGLCOPYBUFFERSUBDATAPROC, CopyBufferSubData);
     LOAD_PROC(PFNGLMAPBUFFERRANGEPROC, MapBufferRange);
     LOAD_PROC(PFNGLUNMAPBUFFERPROC, UnmapBuffer);
@@ -56,8 +57,14 @@ bool LoadGLFunctions() {
     LOAD_PROC(PFNGLPROGRAMUNIFORM1IPROC, ProgramUniform1i);
     LOAD_PROC(PFNGLPROGRAMUNIFORM1UIPROC, ProgramUniform1ui);
     LOAD_PROC(PFNGLPROGRAMUNIFORM1FPROC, ProgramUniform1f);
+    LOAD_PROC(PFNGLPROGRAMUNIFORM2FVPROC, ProgramUniform2fv);
+    LOAD_PROC(PFNGLPROGRAMUNIFORM3FVPROC, ProgramUniform3fv);
     LOAD_PROC(PFNGLPROGRAMUNIFORM4FVPROC, ProgramUniform4fv);
+    LOAD_PROC(PFNGLPROGRAMUNIFORM2IVPROC, ProgramUniform2iv);
+    LOAD_PROC(PFNGLPROGRAMUNIFORM3IVPROC, ProgramUniform3iv);
     LOAD_PROC(PFNGLPROGRAMUNIFORM4IVPROC, ProgramUniform4iv);
+    LOAD_PROC(PFNGLPROGRAMUNIFORM2UIVPROC, ProgramUniform2uiv);
+    LOAD_PROC(PFNGLPROGRAMUNIFORM3UIVPROC, ProgramUniform3uiv);
     LOAD_PROC(PFNGLPROGRAMUNIFORM4UIVPROC, ProgramUniform4uiv);
 
     LOAD_PROC(PFNGLGETINTEGERI_VPROC, GetIntegeri_v);
@@ -74,6 +81,10 @@ GLBackend& GLBackend::Instance() {
 
 bool GLBackend::Initialize() {
     if (initialized_) return true;
+
+    // Prevent Mesa Gallium asynchronous worker thread (gdrv0) aborts on Intel and legacy GPUs
+    setenv("GALLIUM_THREAD", "0", 0);
+    setenv("mesa_glthread", "false", 0);
 
     if (!InitEGL()) {
         return false;
@@ -95,29 +106,29 @@ bool GLBackend::InitEGL() {
     PFNEGLGETPLATFORMDISPLAYEXTPROC eglGetPlatformDisplayEXT = 
         (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress("eglGetPlatformDisplayEXT");
 
+    EGLint major, minor;
     if (eglQueryDevicesEXT && eglGetPlatformDisplayEXT) {
         EGLint num_devices = 0;
         eglQueryDevicesEXT(0, nullptr, &num_devices);
         if (num_devices > 0) {
             std::vector<EGLDeviceEXT> devices(num_devices);
             eglQueryDevicesEXT(num_devices, devices.data(), &num_devices);
-            egl_display_ = eglGetPlatformDisplayEXT(EGL_PLATFORM_DEVICE_EXT, devices[0], nullptr);
+            for (int i = 0; i < num_devices; i++) {
+                EGLDisplay dpy = eglGetPlatformDisplayEXT(EGL_PLATFORM_DEVICE_EXT, devices[i], nullptr);
+                if (dpy != EGL_NO_DISPLAY && eglInitialize(dpy, &major, &minor)) {
+                    egl_display_ = dpy;
+                    break;
+                }
+            }
         }
     }
 
     if (egl_display_ == EGL_NO_DISPLAY) {
         egl_display_ = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    }
-
-    if (egl_display_ == EGL_NO_DISPLAY) {
-        std::cerr << "[GLVK] Failed to get EGL display." << std::endl;
-        return false;
-    }
-
-    EGLint major, minor;
-    if (!eglInitialize(egl_display_, &major, &minor)) {
-        std::cerr << "[GLVK] Failed to initialize EGL." << std::endl;
-        return false;
+        if (egl_display_ == EGL_NO_DISPLAY || !eglInitialize(egl_display_, &major, &minor)) {
+            std::cerr << "[GLVK] Failed to get/initialize EGL display." << std::endl;
+            return false;
+        }
     }
 
     eglBindAPI(EGL_OPENGL_API);
@@ -130,6 +141,24 @@ bool GLBackend::InitEGL() {
     };
 
     egl_context_ = eglCreateContext(egl_display_, EGL_NO_CONFIG_KHR, EGL_NO_CONTEXT, context_attribs);
+    if (egl_context_ == EGL_NO_CONTEXT) {
+        // Fallback: try choosing an EGLConfig for desktop OpenGL (needed on legacy Fermi drivers)
+        const EGLint config_attribs[] = {
+            EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
+            EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+            EGL_NONE
+        };
+        EGLConfig config = nullptr;
+        EGLint num_configs = 0;
+        if (eglChooseConfig(egl_display_, config_attribs, &config, 1, &num_configs) && num_configs > 0) {
+            egl_context_ = eglCreateContext(egl_display_, config, EGL_NO_CONTEXT, context_attribs);
+            if (egl_context_ != EGL_NO_CONTEXT) {
+                const EGLint pbuf_attribs[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
+                egl_surface_ = eglCreatePbufferSurface(egl_display_, config, pbuf_attribs);
+            }
+        }
+    }
+
     if (egl_context_ == EGL_NO_CONTEXT) {
         // Try OpenGL ES 3.1 compute fallback
         eglBindAPI(EGL_OPENGL_ES_API);
@@ -146,7 +175,8 @@ bool GLBackend::InitEGL() {
         return false;
     }
 
-    if (!eglMakeCurrent(egl_display_, EGL_NO_SURFACE, EGL_NO_SURFACE, egl_context_)) {
+    EGLSurface surf = (egl_surface_ != EGL_NO_SURFACE) ? egl_surface_ : EGL_NO_SURFACE;
+    if (!eglMakeCurrent(egl_display_, surf, surf, egl_context_)) {
         std::cerr << "[GLVK] Failed to make EGL context current." << std::endl;
         return false;
     }
@@ -158,11 +188,15 @@ void GLBackend::Shutdown() {
     if (!initialized_) return;
     if (egl_display_ != EGL_NO_DISPLAY) {
         eglMakeCurrent(egl_display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        if (egl_surface_ != EGL_NO_SURFACE) {
+            eglDestroySurface(egl_display_, egl_surface_);
+            egl_surface_ = EGL_NO_SURFACE;
+        }
         if (egl_context_ != EGL_NO_CONTEXT) {
             eglDestroyContext(egl_display_, egl_context_);
             egl_context_ = EGL_NO_CONTEXT;
         }
-        eglTerminate(egl_display_);
+        // Skip eglTerminate: on Nouveau DRI, eglTerminate blocks on kernel driver lock.
         egl_display_ = EGL_NO_DISPLAY;
     }
     initialized_ = false;
@@ -170,7 +204,9 @@ void GLBackend::Shutdown() {
 
 bool GLBackend::MakeCurrent() {
     if (egl_display_ == EGL_NO_DISPLAY || egl_context_ == EGL_NO_CONTEXT) return false;
-    return eglMakeCurrent(egl_display_, EGL_NO_SURFACE, EGL_NO_SURFACE, egl_context_) == EGL_TRUE;
+    if (eglGetCurrentContext() == egl_context_) return true;
+    EGLSurface surf = (egl_surface_ != EGL_NO_SURFACE) ? egl_surface_ : EGL_NO_SURFACE;
+    return eglMakeCurrent(egl_display_, surf, surf, egl_context_) == EGL_TRUE;
 }
 
 void GLBackend::DoneCurrent() {
@@ -185,8 +221,38 @@ void GLBackend::QueryCapabilities() {
 
     gpu_info_.device_name = renderer ? reinterpret_cast<const char*>(renderer) : "OpenGL Compute Device";
     gpu_info_.vendor_name = vendor ? reinterpret_cast<const char*>(vendor) : "Unknown Vendor";
-    gpu_info_.vendor_id = 0x1002;
-    gpu_info_.device_id = 0x73BF;
+
+    std::string vstr = gpu_info_.vendor_name;
+    std::string rstr = gpu_info_.device_name;
+
+    // Detect NVIDIA / Fermi GF108 / Kepler / AMD / Intel
+    if (vstr.find("NVIDIA") != std::string::npos || vstr.find("nvidia") != std::string::npos ||
+        rstr.find("NVIDIA") != std::string::npos || rstr.find("GeForce") != std::string::npos ||
+        vstr.find("nouveau") != std::string::npos || rstr.find("nouveau") != std::string::npos ||
+        rstr.find("NVC") != std::string::npos) {
+        gpu_info_.vendor_id = 0x10DE; // NVIDIA
+        gpu_info_.device_id = 0x0DE0; // GT 730 / Fermi GF108 default
+        gpu_info_.subgroup_size = 32; // NVIDIA warp size is 32
+        if (rstr.find("730") != std::string::npos || rstr.find("GF108") != std::string::npos || rstr.find("NVC1") != std::string::npos) {
+            gpu_info_.device_id = 0x0DE0;
+            // Fermi hardware does not support mthd 0x27e0 (glMemoryBarrier).
+            // Calling glMemoryBarrier triggers FIFO SCHED_ERROR 0d. Disable it on Fermi.
+            gl.MemoryBarrier = nullptr;
+        }
+    } else if (vstr.find("AMD") != std::string::npos || vstr.find("ATI") != std::string::npos ||
+               vstr.find("Radeon") != std::string::npos || rstr.find("Radeon") != std::string::npos) {
+        gpu_info_.vendor_id = 0x1002; // AMD
+        gpu_info_.device_id = 0x73BF;
+        gpu_info_.subgroup_size = 64; // AMD wavefront size is 64
+    } else if (vstr.find("Intel") != std::string::npos || rstr.find("Intel") != std::string::npos) {
+        gpu_info_.vendor_id = 0x8086; // Intel
+        gpu_info_.device_id = 0x9BC5;
+        gpu_info_.subgroup_size = 32;
+    } else {
+        gpu_info_.vendor_id = 0x10DE;
+        gpu_info_.device_id = 0x0DE0;
+        gpu_info_.subgroup_size = 32;
+    }
 
     if (gl.GetIntegeri_v) {
         gl.GetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, (GLint*)&gpu_info_.max_compute_workgroup_count[0]);
@@ -214,5 +280,5 @@ void GLBackend::QueryCapabilities() {
         gpu_info_.max_ssbo_size = 1ULL << 30;
     }
 
-    gpu_info_.total_memory = 4ULL * 1024 * 1024 * 1024;
+    gpu_info_.total_memory = 2ULL * 1024 * 1024 * 1024; // 2GB
 }

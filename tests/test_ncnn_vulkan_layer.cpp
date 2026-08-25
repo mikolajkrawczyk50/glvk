@@ -20,13 +20,14 @@ bool test_relu_layer(ncnn::VulkanDevice* vkdev, bool use_fp16) {
     opt.blob_vkallocator = vkdev->acquire_blob_allocator();
     opt.staging_vkallocator = vkdev->acquire_staging_allocator();
 
-    ncnn::Layer* relu = ncnn::create_layer_vulkan(ncnn::LayerType::ReLU);
+    ncnn::Layer* relu = ncnn::create_layer(ncnn::LayerType::ReLU);
     assert(relu != nullptr);
     relu->vkdev = vkdev;
 
     ncnn::ParamDict pd;
     pd.set(0, 0.0f); // slope = 0
     relu->load_param(pd);
+    std::cerr << "[DEBUG] calling relu->create_pipeline..." << std::endl;
     int p_res = relu->create_pipeline(opt);
     std::cout << "[NCNN] relu->create_pipeline result: " << p_res << std::endl;
 
@@ -82,7 +83,7 @@ bool test_unaryop_layer(ncnn::VulkanDevice* vkdev, bool use_fp16) {
     opt.blob_vkallocator = vkdev->acquire_blob_allocator();
     opt.staging_vkallocator = vkdev->acquire_staging_allocator();
 
-    ncnn::Layer* sigmoid = ncnn::create_layer_vulkan(ncnn::LayerType::Sigmoid);
+    ncnn::Layer* sigmoid = ncnn::create_layer(ncnn::LayerType::Sigmoid);
     assert(sigmoid != nullptr);
     sigmoid->vkdev = vkdev;
 

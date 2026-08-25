@@ -8,8 +8,9 @@
 struct GLGPUInfo {
     std::string device_name;
     std::string vendor_name;
-    uint32_t vendor_id = 0;
-    uint32_t device_id = 0;
+    uint32_t vendor_id = 0x10DE; // default NVIDIA
+    uint32_t device_id = 0x0DE0; // default Fermi GT 730
+    uint32_t subgroup_size = 32; // Fermi warp size 32
     uint32_t max_compute_workgroup_invocations = 1024;
     uint32_t max_compute_workgroup_count[3] = { 65535, 65535, 65535 };
     uint32_t max_compute_workgroup_size[3] = { 1024, 1024, 64 };
@@ -33,7 +34,7 @@ public:
     const GLGPUInfo& GetGPUInfo() const { return gpu_info_; }
     bool IsInitialized() const { return initialized_; }
 
-    std::mutex& GetMutex() { return mutex_; }
+    std::recursive_mutex& GetMutex() { return mutex_; }
 
 private:
     GLBackend() = default;
@@ -44,9 +45,10 @@ private:
 
     EGLDisplay egl_display_ = EGL_NO_DISPLAY;
     EGLContext egl_context_ = EGL_NO_CONTEXT;
+    EGLSurface egl_surface_ = EGL_NO_SURFACE;
     bool initialized_ = false;
     GLGPUInfo gpu_info_;
-    std::mutex mutex_;
+    std::recursive_mutex mutex_;
 };
 
 class GLVKContextScope {
