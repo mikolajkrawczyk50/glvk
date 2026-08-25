@@ -118,21 +118,7 @@ VkResult vkAllocateMemory(VkDevice device,
 
     gl.GenBuffers(1, &mem->gl_buffer);
     gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, mem->gl_buffer);
-
-    if (gl.BufferStorage) {
-        GLbitfield flags = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
-        gl.BufferStorage(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)mem->size, nullptr, flags);
-        void* ptr = gl.MapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)mem->size, flags);
-        if (ptr) {
-            memset(ptr, 0, mem->size);
-            mem->mapped_ptr = ptr;
-            mem->mapped_offset = 0;
-            mem->mapped_size = mem->size;
-        }
-    } else {
-        gl.BufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)mem->size, nullptr, GL_DYNAMIC_DRAW);
-    }
-
+    gl.BufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)mem->size, nullptr, GL_DYNAMIC_DRAW);
     gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
     mem->gl_buffers = { mem->gl_buffer };
@@ -201,75 +187,40 @@ VkResult vkMapMemory(VkDevice device,
                      void** ppData) {
     if (!memory || !ppData) return VK_ERROR_MEMORY_MAP_FAILED;
 
-    if (memory->shadow_ptr) {
-        GLVKContextScope scope;
-        if (memory->gl_buffer) {
-            gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffer);
-            gl.GetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)memory->size, memory->shadow_ptr);
-            gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-        }
-        *ppData = (uint8_t*)memory->shadow_ptr + offset;
-        return VK_SUCCESS;
-    }
-
-    if (memory->mapped_ptr) {
-        *ppData = (uint8_t*)memory->mapped_ptr + offset;
-        return VK_SUCCESS;
-    }
-
-    GLVKContextScope scope;
-
-    gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffer);
-
-    GLbitfield access = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
-    void* ptr = gl.MapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)memory->size, access);
-    gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-
-    if (!ptr) {
-        gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffer);
-        ptr = gl.MapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)memory->size, GL_MAP_READ_BIT | GL_MAP_WRITE_BIT);
-        gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    }
-
-    if (!ptr) {
+    if (!memory->shadow_ptr) {
         memory->shadow_ptr = malloc((size_t)memory->size);
-        if (memory->shadow_ptr) {
+        if (!memory->shadow_ptr) {
+            *ppData = nullptr;
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        memset(memory->shadow_ptr, 0, (size_t)memory->size);
+        if (memory->gl_buffer) {
+            GLVKContextScope scope;
             gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffer);
             gl.GetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)memory->size, memory->shadow_ptr);
             gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-            *ppData = (uint8_t*)memory->shadow_ptr + offset;
-            return VK_SUCCESS;
         }
-        *ppData = nullptr;
-        return VK_ERROR_MEMORY_MAP_FAILED;
     }
 
-    memory->mapped_ptr = ptr;
-    memory->mapped_offset = 0;
-    memory->mapped_size = memory->size;
-
-    *ppData = (uint8_t*)ptr + offset;
+    *ppData = (uint8_t*)memory->shadow_ptr + offset;
     return VK_SUCCESS;
 }
 
 void vkUnmapMemory(VkDevice device, VkDeviceMemory memory) {
-    if (!memory) return;
+    if (!memory || !memory->shadow_ptr) return;
 
-    if (memory->shadow_ptr) {
-        GLVKContextScope scope;
-        if (memory->gl_buffers.size() > 1) {
-            for (size_t b = 0; b < memory->gl_buffers.size(); b++) {
-                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffers[b]);
-                gl.BufferSubData(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)memory->bank_sizes[b],
-                                 (const uint8_t*)memory->shadow_ptr + b * MAX_BANK_SIZE);
-                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-            }
-        } else if (memory->gl_buffer) {
-            gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffer);
-            gl.BufferSubData(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)memory->size, memory->shadow_ptr);
+    GLVKContextScope scope;
+    if (memory->gl_buffers.size() > 1) {
+        for (size_t b = 0; b < memory->gl_buffers.size(); b++) {
+            gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffers[b]);
+            gl.BufferSubData(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)memory->bank_sizes[b],
+                             (const uint8_t*)memory->shadow_ptr + b * MAX_BANK_SIZE);
             gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
         }
-        return;
+    } else if (memory->gl_buffer) {
+        gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffer);
+        gl.BufferSubData(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)memory->size, memory->shadow_ptr);
+        gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
 }
 

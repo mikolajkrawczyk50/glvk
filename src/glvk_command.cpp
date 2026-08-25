@@ -408,15 +408,13 @@ VkResult vkQueueSubmit(VkQueue queue,
 
     VkPipeline current_pipeline = VK_NULL_HANDLE;
     uint8_t current_push_constants[128] = {0};
-    uint32_t total_cmds = 0;
+    uint32_t gpu_work_count = 0;
 
     for (uint32_t s = 0; s < submitCount; s++) {
         const auto& submit = pSubmits[s];
         for (uint32_t c = 0; c < submit.commandBufferCount; c++) {
             auto cb = submit.pCommandBuffers[c];
             if (!cb) continue;
-
-            total_cmds += cb->recorded_commands.size();
 
             for (const auto& cmd : cb->recorded_commands) {
                 switch (cmd.type) {
@@ -490,9 +488,18 @@ VkResult vkQueueSubmit(VkQueue queue,
                         break;
                     }
                     case GLVKCmdType::CopyBuffer: {
+                        gpu_work_count++;
                         auto src = cmd.copy_buffer.src_buffer;
                         auto dst = cmd.copy_buffer.dst_buffer;
                         if (src && dst && src->memory && dst->memory) {
+                            if (src->memory->shadow_ptr) {
+                                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, src->memory->gl_buffer);
+                                gl.BufferSubData(GL_SHADER_STORAGE_BUFFER, (GLintptr)(src->memory_offset + cmd.copy_buffer.src_offset),
+                                                 (GLsizeiptr)cmd.copy_buffer.size,
+                                                 (const uint8_t*)src->memory->shadow_ptr + src->memory_offset + cmd.copy_buffer.src_offset);
+                                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+                            }
+
                             gl.BindBuffer(GL_COPY_READ_BUFFER, src->memory->gl_buffer);
                             gl.BindBuffer(GL_COPY_WRITE_BUFFER, dst->memory->gl_buffer);
                             gl.CopyBufferSubData(
@@ -504,15 +511,21 @@ VkResult vkQueueSubmit(VkQueue queue,
                             );
                             gl.BindBuffer(GL_COPY_READ_BUFFER, 0);
                             gl.BindBuffer(GL_COPY_WRITE_BUFFER, 0);
+
+                            if (dst->memory->shadow_ptr) {
+                                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, dst->memory->gl_buffer);
+                                gl.GetBufferSubData(GL_SHADER_STORAGE_BUFFER, (GLintptr)(dst->memory_offset + cmd.copy_buffer.dst_offset),
+                                                    (GLsizeiptr)cmd.copy_buffer.size,
+                                                    (uint8_t*)dst->memory->shadow_ptr + dst->memory_offset + cmd.copy_buffer.dst_offset);
+                                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+                            }
                         }
                         break;
                     }
                     case GLVKCmdType::FillBuffer: {
+                        gpu_work_count++;
                         auto dst = cmd.fill_buffer.dst_buffer;
                         if (dst && dst->memory) {
-                            // Use BufferSubData with a temp fill pattern instead of
-                            // MapBufferRange (which fails on persistent-storage buffers
-                            // when GL_MAP_PERSISTENT_BIT is not specified)
                             size_t fill_size = (size_t)cmd.fill_buffer.size;
                             size_t count = fill_size / sizeof(uint32_t);
                             std::vector<uint32_t> fill_data(count, cmd.fill_buffer.data);
@@ -526,6 +539,7 @@ VkResult vkQueueSubmit(VkQueue queue,
                         break;
                     }
                     case GLVKCmdType::UpdateBuffer: {
+                        gpu_work_count++;
                         auto dst = cmd.update_buffer.dst_buffer;
                         if (dst && dst->memory && cmd.update_buffer.data_copy) {
                             gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, dst->memory->gl_buffer);
@@ -535,12 +549,11 @@ VkResult vkQueueSubmit(VkQueue queue,
                                 cmd.update_buffer.data_copy);
                             gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
                             free(cmd.update_buffer.data_copy);
-                            // Note: we null out the pointer to avoid double-free if
-                            // commands are replayed (though they shouldn't be)
                         }
                         break;
                     }
                     case GLVKCmdType::Dispatch: {
+                        gpu_work_count++;
                         if (current_pipeline && current_pipeline->gl_program) {
                             gl.UseProgram(current_pipeline->gl_program);
                             ApplyPushConstants(current_pipeline, current_push_constants);
@@ -556,9 +569,7 @@ VkResult vkQueueSubmit(VkQueue queue,
                         }
 
                         s_dispatch_count++;
-                        if ((s_dispatch_count % 8) == 0) {
-                            glFlush();
-                        }
+                        glFlush();
                         if (GetGLVKLogLevel() >= 2 && current_pipeline) {
                             std::cout << "[DISPATCH #" << s_dispatch_count << "] Groups: ("
                                       << cmd.dispatch.group_count_x << ","
@@ -573,6 +584,7 @@ VkResult vkQueueSubmit(VkQueue queue,
                         break;
                     }
                     case GLVKCmdType::DispatchIndirect: {
+                        gpu_work_count++;
                         if (gl.DispatchComputeIndirect && cmd.dispatch_indirect.buffer && cmd.dispatch_indirect.buffer->memory) {
                             if (current_pipeline && current_pipeline->gl_program) {
                                 ApplyPushConstants(current_pipeline, current_push_constants);
@@ -606,7 +618,7 @@ VkResult vkQueueSubmit(VkQueue queue,
             gl.DeleteSync(fence->sync);
             fence->sync = nullptr;
         }
-        if (total_cmds > 0 && gl.FenceSync) {
+        if (gpu_work_count > 0 && gl.FenceSync) {
             fence->sync = gl.FenceSync(0x9117 /* GL_SYNC_GPU_COMMANDS_COMPLETE */, 0);
             fence->signaled = false;
         } else {
@@ -615,7 +627,7 @@ VkResult vkQueueSubmit(VkQueue queue,
     }
 
     // Critical for Fermi GF108 and legacy drivers: flush buffered commands to hardware
-    if (total_cmds > 0) {
+    if (gpu_work_count > 0) {
         glFlush();
     }
 
