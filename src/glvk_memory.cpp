@@ -179,11 +179,6 @@ void vkFreeMemory(VkDevice device,
 
     // Pool full: destroy buffer safely after GPU completion
     GLVKContextScope scope;
-    glFinish();
-
-    for (GLuint i = 0; i < 32; i++) {
-        gl.BindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
-    }
 
     if (memory->mapped_ptr) {
         gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, memory->gl_buffer);
