@@ -80,8 +80,19 @@ VkResult vkWaitForFences(VkDevice device,
         if (gl.MemoryBarrier) {
             gl.MemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT | GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
         }
-        glFinish();
-        f->signaled = true;
+
+        if (f->sync && gl.ClientWaitSync) {
+            GLenum res = gl.ClientWaitSync(f->sync, GL_SYNC_FLUSH_COMMANDS_BIT, timeout);
+            if (res == GL_ALREADY_SIGNALED || res == GL_CONDITION_SATISFIED) {
+                f->signaled = true;
+            } else {
+                glFinish();
+                f->signaled = true;
+            }
+        } else {
+            glFinish();
+            f->signaled = true;
+        }
     }
 
     return VK_SUCCESS;

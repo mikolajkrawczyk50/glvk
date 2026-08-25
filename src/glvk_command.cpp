@@ -408,12 +408,15 @@ VkResult vkQueueSubmit(VkQueue queue,
 
     VkPipeline current_pipeline = VK_NULL_HANDLE;
     uint8_t current_push_constants[128] = {0};
+    uint32_t total_cmds = 0;
 
     for (uint32_t s = 0; s < submitCount; s++) {
         const auto& submit = pSubmits[s];
         for (uint32_t c = 0; c < submit.commandBufferCount; c++) {
             auto cb = submit.pCommandBuffers[c];
             if (!cb) continue;
+
+            total_cmds += cb->recorded_commands.size();
 
             for (const auto& cmd : cb->recorded_commands) {
                 switch (cmd.type) {
@@ -603,11 +606,18 @@ VkResult vkQueueSubmit(VkQueue queue,
             gl.DeleteSync(fence->sync);
             fence->sync = nullptr;
         }
-        fence->signaled = false;
+        if (total_cmds > 0 && gl.FenceSync) {
+            fence->sync = gl.FenceSync(0x9117 /* GL_SYNC_GPU_COMMANDS_COMPLETE */, 0);
+            fence->signaled = false;
+        } else {
+            fence->signaled = true;
+        }
     }
 
     // Critical for Fermi GF108 and legacy drivers: flush buffered commands to hardware
-    glFlush();
+    if (total_cmds > 0) {
+        glFlush();
+    }
 
     return VK_SUCCESS;
 }

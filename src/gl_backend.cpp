@@ -2,6 +2,11 @@
 #include <iostream>
 #include <vector>
 #include <cstring>
+#include <cstdlib>
+#include <mutex>
+#include <fcntl.h>
+#include <unistd.h>
+#include <dlfcn.h>
 
 GLFunctions gl;
 
@@ -80,6 +85,8 @@ GLBackend& GLBackend::Instance() {
 }
 
 bool GLBackend::Initialize() {
+    static std::mutex init_mutex;
+    std::lock_guard<std::mutex> lock(init_mutex);
     if (initialized_) return true;
 
     // Prevent Mesa Gallium asynchronous worker thread (gdrv0) aborts on Intel and legacy GPUs
@@ -101,28 +108,54 @@ bool GLBackend::Initialize() {
 }
 
 bool GLBackend::InitEGL() {
-    PFNEGLQUERYDEVICESEXTPROC eglQueryDevicesEXT = 
-        (PFNEGLQUERYDEVICESEXTPROC)eglGetProcAddress("eglQueryDevicesEXT");
     PFNEGLGETPLATFORMDISPLAYEXTPROC eglGetPlatformDisplayEXT = 
         (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress("eglGetPlatformDisplayEXT");
 
-    EGLint major, minor;
-    if (eglQueryDevicesEXT && eglGetPlatformDisplayEXT) {
-        EGLint num_devices = 0;
-        eglQueryDevicesEXT(0, nullptr, &num_devices);
-        if (num_devices > 0) {
-            std::vector<EGLDeviceEXT> devices(num_devices);
-            eglQueryDevicesEXT(num_devices, devices.data(), &num_devices);
-            for (int i = 0; i < num_devices; i++) {
-                EGLDisplay dpy = eglGetPlatformDisplayEXT(EGL_PLATFORM_DEVICE_EXT, devices[i], nullptr);
-                if (dpy != EGL_NO_DISPLAY && eglInitialize(dpy, &major, &minor)) {
-                    egl_display_ = dpy;
-                    break;
+    EGLint major = 0, minor = 0;
+
+    // 1. Try GBM on /dev/dri/renderD128 for direct unprivileged GPU rendering
+    int render_fd = open("/dev/dri/renderD128", O_RDWR | O_CLOEXEC);
+    if (render_fd >= 0) {
+        void* gbm_lib = dlopen("libgbm.so.1", RTLD_NOW | RTLD_GLOBAL);
+        if (!gbm_lib) gbm_lib = dlopen("libgbm.so", RTLD_NOW | RTLD_GLOBAL);
+        if (gbm_lib) {
+            typedef void* (*PFN_gbm_create_device)(int);
+            PFN_gbm_create_device create_dev = (PFN_gbm_create_device)dlsym(gbm_lib, "gbm_create_device");
+            if (create_dev && eglGetPlatformDisplayEXT) {
+                void* gbm_dev = create_dev(render_fd);
+                if (gbm_dev) {
+                    EGLDisplay dpy = eglGetPlatformDisplayEXT(0x31D7 /* EGL_PLATFORM_GBM_KHR */, gbm_dev, nullptr);
+                    if (dpy != EGL_NO_DISPLAY && eglInitialize(dpy, &major, &minor)) {
+                        egl_display_ = dpy;
+                    }
                 }
             }
         }
     }
 
+    // 2. Fallback: EGLDeviceEXT
+    if (egl_display_ == EGL_NO_DISPLAY) {
+        PFNEGLQUERYDEVICESEXTPROC eglQueryDevicesEXT = 
+            (PFNEGLQUERYDEVICESEXTPROC)eglGetProcAddress("eglQueryDevicesEXT");
+        if (eglQueryDevicesEXT && eglGetPlatformDisplayEXT) {
+            EGLint num_devices = 0;
+            eglQueryDevicesEXT(0, nullptr, &num_devices);
+            if (num_devices > 0) {
+                std::vector<EGLDeviceEXT> devices(num_devices);
+                eglQueryDevicesEXT(num_devices, devices.data(), &num_devices);
+                // Try from the last device to first (hardware GPU is usually index 1 when 0 is software)
+                for (int i = num_devices - 1; i >= 0; i--) {
+                    EGLDisplay dpy = eglGetPlatformDisplayEXT(EGL_PLATFORM_DEVICE_EXT, devices[i], nullptr);
+                    if (dpy != EGL_NO_DISPLAY && eglInitialize(dpy, &major, &minor)) {
+                        egl_display_ = dpy;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Fallback: Default display
     if (egl_display_ == EGL_NO_DISPLAY) {
         egl_display_ = eglGetDisplay(EGL_DEFAULT_DISPLAY);
         if (egl_display_ == EGL_NO_DISPLAY || !eglInitialize(egl_display_, &major, &minor)) {
