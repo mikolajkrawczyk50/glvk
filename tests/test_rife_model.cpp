@@ -3,6 +3,7 @@
 #include <net.h>
 #include <mat.h>
 #include <gpu.h>
+#include <layer.h>
 
 class Warp : public ncnn::Layer {
 public:

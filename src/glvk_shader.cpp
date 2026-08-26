@@ -423,11 +423,16 @@ GLuint CompileSPIRVToGLProgram(
                 size_t size = glsl.get_declared_struct_member_size(block_type, (uint32_t)i);
                 const auto& member_type = glsl.get_type(block_type.member_types[i]);
 
-                uint32_t type_enum = 0; // 0 = int, 1 = float, 2 = uint
-                if (member_type.basetype == spirv_cross::SPIRType::Float) {
+                uint32_t type_enum = 0; // 0 = int/bool, 1 = float, 2 = uint
+                if (member_type.basetype == spirv_cross::SPIRType::Float ||
+                    member_type.basetype == spirv_cross::SPIRType::Half) {
                     type_enum = 1;
-                } else if (member_type.basetype == spirv_cross::SPIRType::UInt) {
+                } else if (member_type.basetype == spirv_cross::SPIRType::UInt ||
+                           member_type.basetype == spirv_cross::SPIRType::UByte ||
+                           member_type.basetype == spirv_cross::SPIRType::UShort) {
                     type_enum = 2;
+                } else {
+                    type_enum = 0;
                 }
 
                 // Try various naming conventions used by GLSL compilers

@@ -198,7 +198,7 @@ struct GLVKCmd {
             VkBuffer dst_buffer;
             VkDeviceSize dst_offset;
             VkDeviceSize data_size;
-            void* data_copy; // dynamically allocated, freed after execution
+            const void* data_ptr;
         } update_buffer;
 
         struct {
@@ -219,6 +219,7 @@ struct VkCommandBuffer_T {
     VkCommandBufferLevel level;
     bool is_recording = false;
     std::vector<GLVKCmd> recorded_commands;
+    std::vector<std::vector<uint8_t>> update_buffers;
 };
 
 struct VkCommandPool_T {

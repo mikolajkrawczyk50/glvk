@@ -87,6 +87,7 @@ GLBackend& GLBackend::Instance() {
 bool GLBackend::Initialize() {
     static std::mutex init_mutex;
     std::lock_guard<std::mutex> lock(init_mutex);
+    ref_count_++;
     if (initialized_) return true;
 
     // Prevent Mesa Gallium asynchronous worker thread (gdrv0) aborts on Intel and legacy GPUs
@@ -94,10 +95,12 @@ bool GLBackend::Initialize() {
     setenv("mesa_glthread", "false", 1);
 
     if (!InitEGL()) {
+        ref_count_--;
         return false;
     }
 
     if (!LoadGLFunctions()) {
+        ref_count_--;
         return false;
     }
 
@@ -113,16 +116,28 @@ bool GLBackend::InitEGL() {
     PFNEGLGETPLATFORMDISPLAYEXTPROC eglGetPlatformDisplayEXT = 
         (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress("eglGetPlatformDisplayEXT");
 
+    int target_device = -1;
+    const char* dev_env = getenv("GLVK_DEVICE");
+    if (dev_env) target_device = atoi(dev_env);
+    bool verbose = (getenv("GLVK_DEBUG") || getenv("GLVK_LOG") || getenv("GLVK_LOG_LEVEL"));
+
     EGLint major = 0, minor = 0;
     if (eglQueryDevicesEXT && eglGetPlatformDisplayEXT) {
         EGLint num_devices = 0;
         eglQueryDevicesEXT(0, nullptr, &num_devices);
         if (num_devices > 0) {
+            if (verbose) {
+                std::cerr << "[GLVK] Found " << num_devices << " EGL device(s)" << std::endl;
+            }
             std::vector<EGLDeviceEXT> devices(num_devices);
             eglQueryDevicesEXT(num_devices, devices.data(), &num_devices);
             for (int i = 0; i < num_devices; i++) {
+                if (target_device >= 0 && i != target_device) continue;
                 EGLDisplay dpy = eglGetPlatformDisplayEXT(EGL_PLATFORM_DEVICE_EXT, devices[i], nullptr);
                 if (dpy != EGL_NO_DISPLAY && eglInitialize(dpy, &major, &minor)) {
+                    if (verbose) {
+                        std::cerr << "[GLVK] Selected EGL device " << i << std::endl;
+                    }
                     egl_display_ = dpy;
                     break;
                 }
@@ -192,7 +207,11 @@ bool GLBackend::InitEGL() {
 }
 
 void GLBackend::Shutdown() {
+    static std::mutex shutdown_mutex;
+    std::lock_guard<std::mutex> lock(shutdown_mutex);
     if (!initialized_) return;
+    if (--ref_count_ > 0) return;
+
     if (egl_display_ != EGL_NO_DISPLAY) {
         eglMakeCurrent(egl_display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         if (egl_surface_ != EGL_NO_SURFACE) {
@@ -217,9 +236,6 @@ bool GLBackend::MakeCurrent() {
 }
 
 void GLBackend::DoneCurrent() {
-    if (egl_display_ != EGL_NO_DISPLAY) {
-        eglMakeCurrent(egl_display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-    }
 }
 
 void GLBackend::QueryCapabilities() {

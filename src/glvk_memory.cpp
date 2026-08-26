@@ -250,11 +250,18 @@ VkResult vkFlushMappedMemoryRanges(VkDevice device,
     for (uint32_t i = 0; i < memoryRangeCount; i++) {
         auto mem = pMemoryRanges[i].memory;
         if (mem && mem->shadow_ptr && mem->gl_buffer) {
-            gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, mem->gl_buffer);
-            gl.BufferSubData(GL_SHADER_STORAGE_BUFFER, (GLintptr)pMemoryRanges[i].offset,
-                             (GLsizeiptr)pMemoryRanges[i].size,
-                             (const uint8_t*)mem->shadow_ptr + pMemoryRanges[i].offset);
-            gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+            VkDeviceSize offset = pMemoryRanges[i].offset;
+            VkDeviceSize size = pMemoryRanges[i].size;
+            if (size == VK_WHOLE_SIZE) {
+                size = (mem->size > offset) ? (mem->size - offset) : 0;
+            }
+            if (size > 0) {
+                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, mem->gl_buffer);
+                gl.BufferSubData(GL_SHADER_STORAGE_BUFFER, (GLintptr)offset,
+                                 (GLsizeiptr)size,
+                                 (const uint8_t*)mem->shadow_ptr + offset);
+                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+            }
         }
     }
     return VK_SUCCESS;
@@ -263,20 +270,34 @@ VkResult vkFlushMappedMemoryRanges(VkDevice device,
 VkResult vkInvalidateMappedMemoryRanges(VkDevice device,
                                         uint32_t memoryRangeCount,
                                         const VkMappedMemoryRange* pMemoryRanges) {
+    if (!pMemoryRanges) return VK_SUCCESS;
     GLVKContextScope scope;
+    if (gl.MemoryBarrier) {
+        gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
+    }
+    glFinish();
     for (uint32_t i = 0; i < memoryRangeCount; i++) {
         auto mem = pMemoryRanges[i].memory;
-        if (mem && mem->shadow_ptr && mem->gl_buffers.size() > 1) {
-            for (size_t b = 0; b < mem->gl_buffers.size(); b++) {
-                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, mem->gl_buffers[b]);
-                gl.GetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)mem->bank_sizes[b],
-                                    (uint8_t*)mem->shadow_ptr + b * MAX_BANK_SIZE);
+        if (mem && mem->shadow_ptr) {
+            VkDeviceSize offset = pMemoryRanges[i].offset;
+            VkDeviceSize size = pMemoryRanges[i].size;
+            if (size == VK_WHOLE_SIZE) {
+                size = (mem->size > offset) ? (mem->size - offset) : 0;
+            }
+            if (mem->gl_buffers.size() > 1) {
+                for (size_t b = 0; b < mem->gl_buffers.size(); b++) {
+                    gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, mem->gl_buffers[b]);
+                    gl.GetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)mem->bank_sizes[b],
+                                        (uint8_t*)mem->shadow_ptr + b * MAX_BANK_SIZE);
+                    gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+                }
+            } else if (mem->gl_buffer && size > 0) {
+                gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, mem->gl_buffer);
+                gl.GetBufferSubData(GL_SHADER_STORAGE_BUFFER, (GLintptr)offset, (GLsizeiptr)size,
+                                    (uint8_t*)mem->shadow_ptr + offset);
                 gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
             }
         }
-    }
-    if (gl.MemoryBarrier) {
-        gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
     }
     return VK_SUCCESS;
 }

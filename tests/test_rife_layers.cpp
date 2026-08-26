@@ -188,7 +188,7 @@ static bool test_deconvolution(ncnn::VulkanDevice* vkdev, int w, int h, int in_c
     pd.set(1, kernel);
     pd.set(2, 1); // dilation
     pd.set(3, stride);
-    pd.set(4, 0); // pad = 0
+    pd.set(4, pad);
     pd.set(5, 1); // bias
     pd.set(6, in_c * out_c * kernel * kernel);
 
@@ -215,6 +215,7 @@ static bool test_deconvolution(ncnn::VulkanDevice* vkdev, int w, int h, int in_c
 
     deconv_gpu->create_pipeline(opt);
     ncnn::Option cpu_opt;
+    cpu_opt.use_packing_layout = false;
     deconv_cpu->create_pipeline(cpu_opt);
 
     {

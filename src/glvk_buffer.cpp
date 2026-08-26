@@ -32,7 +32,7 @@ void vkGetBufferMemoryRequirements(VkDevice device,
     if (!buffer || !pMemoryRequirements) return;
 
     memset(pMemoryRequirements, 0, sizeof(VkMemoryRequirements));
-    uint32_t align = 256;
+    VkDeviceSize align = 256;
     if (device && device->physical_device) {
         align = device->physical_device->gpu_info.min_ssbo_offset_alignment;
     }

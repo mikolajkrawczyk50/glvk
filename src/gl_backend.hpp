@@ -47,6 +47,7 @@ private:
     EGLContext egl_context_ = EGL_NO_CONTEXT;
     EGLSurface egl_surface_ = EGL_NO_SURFACE;
     bool initialized_ = false;
+    int ref_count_ = 0;
     GLGPUInfo gpu_info_;
     std::recursive_mutex mutex_;
 };

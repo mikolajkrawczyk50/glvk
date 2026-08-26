@@ -72,6 +72,7 @@ VkResult vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
                               const VkCommandBufferBeginInfo* pBeginInfo) {
     if (!commandBuffer) return VK_ERROR_INITIALIZATION_FAILED;
     commandBuffer->recorded_commands.clear();
+    commandBuffer->update_buffers.clear();
     commandBuffer->is_recording = true;
     return VK_SUCCESS;
 }
@@ -86,6 +87,7 @@ VkResult vkResetCommandBuffer(VkCommandBuffer commandBuffer,
                               VkCommandBufferResetFlags flags) {
     if (!commandBuffer) return VK_SUCCESS;
     commandBuffer->recorded_commands.clear();
+    commandBuffer->update_buffers.clear();
     commandBuffer->is_recording = false;
     return VK_SUCCESS;
 }
@@ -243,15 +245,14 @@ void vkCmdUpdateBuffer(VkCommandBuffer commandBuffer,
                        const void* pData) {
     if (!commandBuffer || !dstBuffer || !pData || dataSize == 0) return;
 
+    commandBuffer->update_buffers.emplace_back((const uint8_t*)pData, (const uint8_t*)pData + (size_t)dataSize);
+
     GLVKCmd cmd;
     cmd.type = GLVKCmdType::UpdateBuffer;
     cmd.update_buffer.dst_buffer = dstBuffer;
     cmd.update_buffer.dst_offset = dstOffset;
     cmd.update_buffer.data_size = dataSize;
-    cmd.update_buffer.data_copy = malloc((size_t)dataSize);
-    if (cmd.update_buffer.data_copy) {
-        memcpy(cmd.update_buffer.data_copy, pData, (size_t)dataSize);
-    }
+    cmd.update_buffer.data_ptr = commandBuffer->update_buffers.back().data();
     commandBuffer->recorded_commands.push_back(cmd);
 }
 
@@ -537,14 +538,13 @@ VkResult vkQueueSubmit(VkQueue queue,
                     case GLVKCmdType::UpdateBuffer: {
                         gpu_work_count++;
                         auto dst = cmd.update_buffer.dst_buffer;
-                        if (dst && dst->memory && cmd.update_buffer.data_copy) {
+                        if (dst && dst->memory && cmd.update_buffer.data_ptr) {
                             gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, dst->memory->gl_buffer);
                             gl.BufferSubData(GL_SHADER_STORAGE_BUFFER,
                                 (GLintptr)(dst->memory_offset + cmd.update_buffer.dst_offset),
                                 (GLsizeiptr)cmd.update_buffer.data_size,
-                                cmd.update_buffer.data_copy);
+                                cmd.update_buffer.data_ptr);
                             gl.BindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-                            free(cmd.update_buffer.data_copy);
                         }
                         break;
                     }
