@@ -232,10 +232,20 @@ bool GLBackend::MakeCurrent() {
     if (egl_display_ == EGL_NO_DISPLAY || egl_context_ == EGL_NO_CONTEXT) return false;
     if (eglGetCurrentContext() == egl_context_) return true;
     EGLSurface surf = (egl_surface_ != EGL_NO_SURFACE) ? egl_surface_ : EGL_NO_SURFACE;
-    return eglMakeCurrent(egl_display_, surf, surf, egl_context_) == EGL_TRUE;
+    EGLBoolean ok = eglMakeCurrent(egl_display_, surf, surf, egl_context_);
+    if (!ok) {
+        std::cerr << "[GLVK] eglMakeCurrent failed with err 0x" << std::hex << eglGetError() << std::dec << std::endl;
+        return false;
+    }
+    return true;
 }
 
 void GLBackend::DoneCurrent() {
+    if (egl_display_ != EGL_NO_DISPLAY && egl_context_ != EGL_NO_CONTEXT) {
+        if (eglGetCurrentContext() == egl_context_) {
+            eglMakeCurrent(egl_display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        }
+    }
 }
 
 void GLBackend::QueryCapabilities() {
